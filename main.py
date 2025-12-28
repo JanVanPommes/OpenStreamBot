@@ -112,12 +112,14 @@ async def main():
     # Status Reporting Task
     async def status_reporter():
         import json
+        import os
         while True:
             try:
                 status = {
                     "twitch": "Online" if (cfg['twitch']['enabled'] and 'bot' in locals() and bot and hasattr(bot, 'is_ready') and bot.is_ready) else "Offline",
                     "youtube": "Polling" if ('yt_task' in locals() and yt_task and not yt_task.done()) else "Offline",
-                    "obs": "Connected" if ('obs_ctrl' in locals() and obs_ctrl and obs_ctrl.is_connected) else "Offline"
+                    "obs": "Connected" if ('obs_ctrl' in locals() and obs_ctrl and obs_ctrl.is_connected) else "Offline",
+                    "pid": os.getpid()
                 }
                 with open(".bot_status", "w") as f:
                     json.dump(status, f)
@@ -156,7 +158,8 @@ async def main():
 if __name__ == "__main__":
     def report_status(twitch="Offline", youtube="Offline", obs="Offline"):
         import json
-        status = {"twitch": twitch, "youtube": youtube, "obs": obs}
+        import os
+        status = {"twitch": twitch, "youtube": youtube, "obs": obs, "pid": os.getpid()}
         try:
             with open(".bot_status", "w") as f:
                 json.dump(status, f)

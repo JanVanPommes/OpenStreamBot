@@ -414,12 +414,23 @@ class App(ctk.CTk):
                     # Check for stale file (last update > 5s)
                     stale = (time.time() - os.path.getmtime(".bot_status")) > 5
                     
+                    # PID Check
+                    reported_pid = status.get("pid")
+                    is_pid_running = False
+                    if reported_pid:
+                        try:
+                            # signal 0 check if process is alive
+                            os.kill(reported_pid, 0)
+                            is_pid_running = True
+                        except OSError:
+                            is_pid_running = False
+                    
                     # Update Overall Status
-                    t_status = "Offline" if stale else status.get("twitch", "Offline")
-                    y_status = "Offline" if stale else status.get("youtube", "Offline")
+                    t_status = "Offline" if (stale or not is_pid_running) else status.get("twitch", "Offline")
+                    y_status = "Offline" if (stale or not is_pid_running) else status.get("youtube", "Offline")
                     is_running = self.bot_process and self.bot_process.poll() is None
                     
-                    if is_running:
+                    if is_running or is_pid_running:
                         if (t_status == "Online" or y_status == "Polling") and not stale:
                             self.status_label.configure(text="Status: Bot Online", text_color="green")
                         else:
@@ -428,8 +439,8 @@ class App(ctk.CTk):
                         self.status_label.configure(text="Status: Bot Offline", text_color="red")
                     
                     # Update OBS Status
-                    o_status = "Offline" if stale else status.get("obs", "Offline")
-                    if o_status == "Connected" and is_running and not stale:
+                    o_status = "Offline" if (stale or not is_pid_running) else status.get("obs", "Offline")
+                    if o_status == "Connected" and (is_running or is_pid_running) and not stale:
                         self.obs_status_label.configure(text="OBS: Connected", text_color="green")
                     else:
                         self.obs_status_label.configure(text="OBS: Offline", text_color="red")
