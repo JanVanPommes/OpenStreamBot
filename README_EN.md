@@ -33,23 +33,45 @@ OpenStreamBot is an open-source bot for streamers that integrates Twitch and You
 
 ## 🚀 Installation
 
-### 1. Clone Repository
-```bash
-git clone https://github.com/JanVanPommes/OpenStreamBot.git
-cd OpenStreamBot
-```
+### 🛠️ OS-Specific Installation
 
-### 2. Create Virtual Environment
-```bash
-python3 -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate   # Windows
-```
+#### **Windows**
+1. **Install Python**: Download Python 3.10+ from [python.org](https://www.python.org/downloads/windows/) (Check "Add Python to PATH"!).
+2. **Clone**: `git clone https://github.com/JanVanPommes/OpenStreamBot.git`
+3. **Setup**: Double-click `start.bat`. It will help you create a venv on first run.
+   - *Manual alternative*:
+     ```cmd
+     python -m venv venv
+     venv\Scripts\activate
+     pip install -r requirements.txt
+     ```
 
-### 3. Install Dependencies
-```bash
-pip install -r requirements.txt
-```
+#### **macOS**
+1. **Python / Homebrew**: `brew install python` (standard if Homebrew is installed).
+2. **Clone**: `git clone https://github.com/JanVanPommes/OpenStreamBot.git`
+3. **Setup**:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   chmod +x start_launcher.sh
+   ```
+
+#### **Linux (Ubuntu/Debian)**
+1. **Prerequisites**:
+   ```bash
+   sudo apt update
+   sudo apt install python3-venv python3-tk
+   ```
+2. **Clone & Setup**:
+   ```bash
+   git clone https://github.com/JanVanPommes/OpenStreamBot.git
+   cd OpenStreamBot
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   chmod +x start_launcher.sh
+   ```
 
 ### 4. Create Configuration
 Copy the example configuration:
@@ -107,8 +129,10 @@ For YouTube, you need your own Google Cloud Project due to API quota limits.
 
 ## ▶️ Start Bot
 
-### With GUI Launcher (recommended)
+- **Windows**: Double-click `start.bat`
+- **Linux/macOS**: `./start_launcher.sh` in terminal or `python launcher.py`
 ```bash
+# Manual execution
 python launcher.py
 ```
 

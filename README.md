@@ -33,23 +33,45 @@ OpenStreamBot ist ein Open-Source-Bot für Streamer, der Twitch und YouTube inte
 
 ## 🚀 Installation
 
-### 1. Repository klonen
-```bash
-git clone https://github.com/JanVanPommes/OpenStreamBot.git
-cd OpenStreamBot
-```
+### 🛠️ Betriebssystem-spezifische Installation
 
-### 2. Virtuelle Umgebung erstellen
-```bash
-python3 -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate   # Windows
-```
+#### **Windows**
+1. **Python installieren**: Lade Python 3.10+ von [python.org](https://www.python.org/downloads/windows/) herunter (Häkchen bei "Add Python to PATH" setzen!).
+2. **Klonen**: `git clone https://github.com/JanVanPommes/OpenStreamBot.git`
+3. **Einrichten**: Doppelklick auf `start.bat`. Das Skript fragt nach der venv-Erstellung beim ersten Mal.
+   - *Alternativ manuell*:
+     ```cmd
+     python -m venv venv
+     venv\Scripts\activate
+     pip install -r requirements.txt
+     ```
 
-### 3. Abhängigkeiten installieren
-```bash
-pip install -r requirements.txt
-```
+#### **macOS**
+1. **Python / Homebrew**: `brew install python` (falls Homebrew installiert ist).
+2. **Klonen**: `git clone https://github.com/JanVanPommes/OpenStreamBot.git`
+3. **Einrichten**:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   chmod +x start_launcher.sh
+   ```
+
+#### **Linux (Ubuntu/Debian)**
+1. **Prerequisites**:
+   ```bash
+   sudo apt update
+   sudo apt install python3-venv python3-tk
+   ```
+2. **Klonen & Einrichten**:
+   ```bash
+   git clone https://github.com/JanVanPommes/OpenStreamBot.git
+   cd OpenStreamBot
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   chmod +x start_launcher.sh
+   ```
 
 ### 4. Konfiguration erstellen
 Kopiere die Beispiel-Konfiguration:
@@ -107,8 +129,10 @@ Für YouTube benötigst du ein eigenes Google Cloud Project wegen API-Quota-Limi
 
 ## ▶️ Bot starten
 
-### Mit GUI Launcher (empfohlen)
+- **Windows**: Doppelklick auf `start.bat`
+- **Linux/macOS**: `./start_launcher.sh` im Terminal oder `python launcher.py`
 ```bash
+# Manuelle Ausführung
 python launcher.py
 ```
 
