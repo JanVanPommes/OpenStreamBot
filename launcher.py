@@ -411,21 +411,25 @@ class App(ctk.CTk):
                 if os.path.exists(".bot_status"):
                     with open(".bot_status", "r") as f:
                         status = json.load(f)
+                    # Check for stale file (last update > 5s)
+                    stale = (time.time() - os.path.getmtime(".bot_status")) > 5
                     
-                    # Update Twitch Status
-                    t_status = status.get("twitch", "Offline")
+                    # Update Overall Status
+                    t_status = "Offline" if stale else status.get("twitch", "Offline")
+                    y_status = "Offline" if stale else status.get("youtube", "Offline")
                     is_running = self.bot_process and self.bot_process.poll() is None
                     
-                    if t_status == "Online" and is_running:
-                        self.status_label.configure(text="Status: Bot Online", text_color="green")
-                    elif is_running:
-                        self.status_label.configure(text="Status: Bot Starting...", text_color="orange")
+                    if is_running:
+                        if (t_status == "Online" or y_status == "Polling") and not stale:
+                            self.status_label.configure(text="Status: Bot Online", text_color="green")
+                        else:
+                            self.status_label.configure(text="Status: Bot Starting...", text_color="orange")
                     else:
                         self.status_label.configure(text="Status: Bot Offline", text_color="red")
                     
                     # Update OBS Status
-                    o_status = status.get("obs", "Offline")
-                    if o_status == "Connected" and is_running:
+                    o_status = "Offline" if stale else status.get("obs", "Offline")
+                    if o_status == "Connected" and is_running and not stale:
                         self.obs_status_label.configure(text="OBS: Connected", text_color="green")
                     else:
                         self.obs_status_label.configure(text="OBS: Offline", text_color="red")
