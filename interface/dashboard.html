@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenStreamBot Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <header>
+        <div style="display:flex; align-items:center; gap: 10px;">
+            <div id="status" title="Verbindungsstatus"></div>
+            <img src="../assets/logo.png" alt="OpenStreamBot" style="width: 32px; height: 32px;">
+            <h1>OpenStreamBot</h1>
+        </div>
+        <button onclick="toggleSettings()"
+            style="background:none; border:none; color:white; cursor:pointer;">⚙️</button>
+    </header>
+
+    <div id="connection-panel" style="display:none; padding: 10px; background: #3a1c1c; text-align: center;">
+        <span style="margin-right: 10px; font-size: 0.9em;">Verbindung verloren.</span>
+        <button onclick="connect()" class="btn-primary">Verbinden</button>
+    </div>
+
+    <div id="settings-panel">
+        <label>Schriftgröße: <span id="font-val">14px</span></label>
+        <input type="range" id="font-slider" min="10" max="30" value="14">
+    </div>
+
+    <div id="chat-container">
+    </div>
+
+    <div id="input-container">
+        <input type="text" id="chat-input" placeholder="Nachricht senden..." autocomplete="off">
+        <button onclick="sendMessage()" id="send-btn">➤</button>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

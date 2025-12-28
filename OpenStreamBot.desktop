@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=OpenStreamBot
+Comment=Stream Bot Launcher
+Exec=/home/jan/Schreibtisch/OpenStreamBot/start_launcher.sh
+Icon=/home/jan/Schreibtisch/OpenStreamBot/assets/logo.png
+Terminal=false
+Categories=Utility;
+Path=/home/jan/Schreibtisch/OpenStreamBot

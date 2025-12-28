@@ -1,0 +1,29 @@
+# Sensitive files
+config.yaml
+token_*.json
+client_secret.json
+.yt_control
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+T Thumbs.db
+
+# Logs
+*.log

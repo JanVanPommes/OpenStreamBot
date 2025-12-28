@@ -1,0 +1,14 @@
+actions:
+- enabled: true
+  group: General
+  name: New Action
+  sub_actions:
+  - ms: 1000
+    type: delay
+  - message: "Hey %user% das system l\xE4uft!"
+    type: twitch_chat
+  triggers:
+  - command: '!test'
+    type: twitch_command
+  - scene_name: Pause
+    type: obs_scene

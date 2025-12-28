@@ -1,0 +1,13 @@
+asyncio
+websockets
+pyyaml
+twitchio==2.10.0
+# pytchat kommt später für YouTube dazu
+customtkinter
+pillow
+packaging
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
+obsws-python
+pygame

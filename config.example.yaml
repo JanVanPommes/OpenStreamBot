@@ -1,0 +1,19 @@
+server:
+  host: localhost
+  port: 8080
+
+twitch:
+  enabled: true
+  client_id: YOUR_TWITCH_CLIENT_ID_HERE
+  client_secret: YOUR_TWITCH_CLIENT_SECRET_HERE
+  channel: your_twitch_username
+
+youtube:
+  enabled: false  # Set to true after setting up
+  client_secret_file: client_secret.json
+  token_file: token_youtube.json
+
+obs:
+  host: localhost
+  port: 4455
+  password: ''  # Leave empty if no password set
