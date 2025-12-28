@@ -351,7 +351,7 @@ class App(ctk.CTk):
             self.read_thread.start()
 
             self.start_btn.configure(text="Stop Bot", fg_color="red", hover_color="darkred")
-            self.status_label.configure(text="Status: Online", text_color="green")
+            self.status_label.configure(text="Status: Starting...", text_color="orange")
             
             # Enable YouTube button if YouTube is configured
             try:
