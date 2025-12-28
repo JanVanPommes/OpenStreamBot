@@ -414,17 +414,18 @@ class App(ctk.CTk):
                     
                     # Update Twitch Status
                     t_status = status.get("twitch", "Offline")
-                    if t_status == "Online":
+                    is_running = self.bot_process and self.bot_process.poll() is None
+                    
+                    if t_status == "Online" and is_running:
                         self.status_label.configure(text="Status: Bot Online", text_color="green")
+                    elif is_running:
+                        self.status_label.configure(text="Status: Bot Starting...", text_color="orange")
                     else:
-                        if self.bot_process and self.bot_process.poll() is None:
-                             self.status_label.configure(text="Status: Bot Starting...", text_color="orange")
-                        else:
-                             self.status_label.configure(text="Status: Bot Offline", text_color="red")
+                        self.status_label.configure(text="Status: Bot Offline", text_color="red")
                     
                     # Update OBS Status
                     o_status = status.get("obs", "Offline")
-                    if o_status == "Connected":
+                    if o_status == "Connected" and is_running:
                         self.obs_status_label.configure(text="OBS: Connected", text_color="green")
                     else:
                         self.obs_status_label.configure(text="OBS: Offline", text_color="red")
