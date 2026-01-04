@@ -155,7 +155,7 @@ class TwitchBot(commands.Bot):
 
     async def event_message(self, message):
         # 1. Author Name sicherstellen (bei Echo manchmal None)
-        author_name = message.author.name if message.author else self.nick
+        author_name = message.author.display_name if message.author and message.author.display_name else (message.author.name if message.author else self.nick)
         
         # Debug-Ausgabe in der Konsole
         # print(f"[Twitch Chat] {author_name}: {message.content} | Tags: {message.tags}")

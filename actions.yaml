@@ -1,14 +1,28 @@
 actions:
 - enabled: true
-  group: General
-  name: New Action
+  group: Commands
+  name: Discord
   sub_actions:
-  - ms: 1000
-    type: delay
-  - message: "Hey %user% das system l\xE4uft!"
+  - message: Hier geht's zur Pommesbude!  https://discord.gg/uZXMTDVU6K
     type: twitch_chat
   triggers:
-  - command: '!test'
+  - command: '!dc'
     type: twitch_command
-  - scene_name: Pause
-    type: obs_scene
+- enabled: true
+  group: Commands
+  name: Youtube
+  sub_actions:
+  - message: Hier gibt's Pommescontent auf YouTube! https://www.youtube.com/@janvanpommes666
+    type: twitch_chat
+  triggers:
+  - command: '!yt'
+    type: twitch_command
+- enabled: true
+  group: Commands
+  name: Bot
+  sub_actions:
+  - message: Hier gibts alle infos zum OpenStreamBot :) https://github.com/JanVanPommes/OpenStreamBot
+    type: twitch_chat
+  triggers:
+  - command: '!openstreambot'
+    type: twitch_command

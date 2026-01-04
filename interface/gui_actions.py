@@ -2,6 +2,8 @@ import customtkinter as ctk
 from tkinter import messagebox, simpledialog, filedialog
 import yaml
 import os
+import pygame._sdl2.audio as sdl_audio
+import pygame
 
 class ActionEditorFrame(ctk.CTkFrame):
     def __init__(self, master, config_file="actions.yaml"):
@@ -169,6 +171,7 @@ class ActionEditorFrame(ctk.CTkFrame):
             if 'command' in t: text += f": {t['command']}"
             elif 'scene_name' in t: text += f": {t['scene_name']}"
             elif 'min_viewers' in t: text += f" (>{t['min_viewers']})"
+            elif 'interval' in t: text += f" ({t['interval']}s)"
             
             lbl = ctk.CTkLabel(f, text=text)
             lbl.pack(side="left", padx=5)
@@ -187,6 +190,7 @@ class ActionEditorFrame(ctk.CTkFrame):
             summary = s['type']
             if 'message' in s: summary += f": {s['message'][:20]}..."
             elif 'ms' in s: summary += f": {s['ms']}ms"
+            elif 'folder' in s: summary += f": {s['folder']}"
             
             lbl = ctk.CTkLabel(f, text=summary)
             lbl.pack(side="left", padx=5)
@@ -259,7 +263,7 @@ class SubActionDialog(ctk.CTkToplevel):
         
         self.type_var = ctk.StringVar(value=start_type)
         self.combo = ctk.CTkComboBox(self, variable=self.type_var, 
-                                     values=["twitch_chat", "delay", "log", "play_sound", "stop_sounds", "obs_set_scene"],
+                                     values=["twitch_chat", "delay", "log", "play_sound", "stop_sounds", "playlist", "stop_playlist", "obs_set_scene"],
                                      command=self.on_type_change)
         self.combo.pack(pady=5)
         
@@ -285,6 +289,22 @@ class SubActionDialog(ctk.CTkToplevel):
             if self.initial_data and self.initial_data.get('type') == choice:
                  return str(self.initial_data.get(key, default))
             return default
+
+        # Helper for Device Dropdown
+        def add_device_selector():
+            ctk.CTkLabel(self.frame_config, text="Audio Device:").pack(anchor="w")
+            
+            # Get Devices
+            try:
+                if not pygame.get_init(): pygame.init()
+                devices = ['Default'] + sdl_audio.get_audio_device_names(False)
+            except:
+                devices = ['Default']
+                
+            dev_var = ctk.StringVar(value=get_val('device', 'Default'))
+            combo = ctk.CTkComboBox(self.frame_config, variable=dev_var, values=devices)
+            combo.pack(fill="x", pady=5)
+            self.widgets['device'] = dev_var
 
         if choice == "twitch_chat":
             ctk.CTkLabel(self.frame_config, text="Chat Message:").pack(anchor="w")
@@ -319,6 +339,23 @@ class SubActionDialog(ctk.CTkToplevel):
             
             btn = ctk.CTkButton(f_frame, text="...", width=30, command=lambda: self.browse_file(entry))
             btn.pack(side="right", padx=5)
+            
+            add_device_selector()
+
+        elif choice == "playlist":
+            ctk.CTkLabel(self.frame_config, text="Music Folder:").pack(anchor="w")
+            f_frame = ctk.CTkFrame(self.frame_config, fg_color="transparent")
+            f_frame.pack(fill="x")
+            
+            entry = ctk.CTkEntry(f_frame)
+            entry.insert(0, get_val('folder'))
+            entry.pack(side="left", fill="x", expand=True)
+            self.widgets['folder'] = entry
+            
+            btn = ctk.CTkButton(f_frame, text="...", width=30, command=lambda: self.browse_folder(entry))
+            btn.pack(side="right", padx=5)
+            
+            add_device_selector()
 
         elif choice == "obs_set_scene":
             ctk.CTkLabel(self.frame_config, text="Scene Name:").pack(anchor="w")
@@ -326,6 +363,12 @@ class SubActionDialog(ctk.CTkToplevel):
             entry.insert(0, get_val('scene'))
             entry.pack(fill="x", pady=5)
             self.widgets['scene'] = entry
+
+    def browse_folder(self, entry_widget):
+        folder = filedialog.askdirectory()
+        if folder:
+            entry_widget.delete(0, "end")
+            entry_widget.insert(0, folder)
 
     def browse_file(self, entry_widget):
         filename = filedialog.askopenfilename(filetypes=[("Audio", "*.mp3 *.wav *.ogg")])
@@ -345,6 +388,10 @@ class SubActionDialog(ctk.CTkToplevel):
                  res['ms'] = int(self.widgets['ms'].get())
             if 'file' in self.widgets:
                 res['file'] = self.widgets['file'].get()
+            if 'folder' in self.widgets:
+                res['folder'] = self.widgets['folder'].get()
+            if 'device' in self.widgets:
+                res['device'] = self.widgets['device'].get()
             if 'scene' in self.widgets:
                 res['scene'] = self.widgets['scene'].get()
         except ValueError:
@@ -372,7 +419,10 @@ class TriggerDialog(ctk.CTkToplevel):
         trigger_types = [
             ("twitch_command", "Twitch: Chat-Befehl (!command)"),
             ("twitch_raid", "Twitch: Raid empfangen"),
+            ("twitch_command", "Twitch: Chat-Befehl (!command)"),
+            ("twitch_raid", "Twitch: Raid empfangen"),
             ("twitch_sub", "Twitch: Neuer Subscriber"),
+            ("timer", "Timer (Intervall)"),
             ("obs_scene", "OBS: Szene gewechselt")
         ]
         
@@ -415,6 +465,7 @@ class TriggerDialog(ctk.CTkToplevel):
         if self.initial_data and self.initial_data.get('type') == internal_type:
              if internal_type == "twitch_command": val = self.initial_data.get('command', '')
              elif internal_type == "twitch_raid": val = str(self.initial_data.get('min_viewers', 0))
+             elif internal_type == "timer": val = str(self.initial_data.get('interval', 60))
              elif internal_type == "obs_scene": val = self.initial_data.get('scene_name', '')
              
         self.entry_var.set(val)
@@ -429,6 +480,9 @@ class TriggerDialog(ctk.CTkToplevel):
         elif internal_type == "twitch_sub":
             self.lbl_config.configure(text="Keine Konfiguration nötig.")
             self.entry_config.configure(state="disabled")
+        elif internal_type == "timer":
+            self.lbl_config.configure(text="Intervall (Sekunden):")
+            self.entry_config.configure(state="normal")
         elif internal_type == "obs_scene":
             self.lbl_config.configure(text="Szenenname:")
             self.entry_config.configure(state="normal")
@@ -446,6 +500,8 @@ class TriggerDialog(ctk.CTkToplevel):
             data['command'] = val
         elif t_type == "twitch_raid":
             data['min_viewers'] = int(val) if val.isdigit() else 0
+        elif t_type == "timer":
+            data['interval'] = int(val) if val.isdigit() else 60
         elif t_type == "obs_scene":
             data['scene_name'] = val
             

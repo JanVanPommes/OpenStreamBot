@@ -3,6 +3,9 @@ import socketserver
 import threading
 import functools
 
+class ReusableTCPServer(socketserver.TCPServer):
+    allow_reuse_address = True
+
 class SimpleWebServer(threading.Thread):
     def __init__(self, port=8000):
         super().__init__()
@@ -18,7 +21,7 @@ class SimpleWebServer(threading.Thread):
         # Handler.log_message = lambda self, format, *args: None
 
         try:
-            with socketserver.TCPServer(("", self.port), Handler) as httpd:
+            with ReusableTCPServer(("", self.port), Handler) as httpd:
                 self.httpd = httpd
                 print(f"[System] Web Server läuft: http://localhost:{self.port}/interface/dashboard.html")
                 httpd.serve_forever()

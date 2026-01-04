@@ -1,67 +1,19 @@
 # Changelog
 
-All notable changes to OpenStreamBot will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [0.1.0-alpha] - 2025-12-28
+## [0.1.1 Alpha] - 2026-01-04
 
 ### Added
-- **Multi-Platform Chat Integration**
-  - Twitch chat support with OAuth authentication
-  - YouTube Live Chat integration with quota optimization
-  - Manual YouTube stream connection to save API quota
-  
-- **OBS Studio Integration**
-  - WebSocket connection to OBS
-  - Scene switching via actions
-  - React to OBS events (scene changes)
+- **Profile System**: Create, save, load, and delete bot configuration profiles directly from the Launcher.
+- **Playlist Action**: New sub-action to play random audio files from a folder continuously.
+- **Timer Trigger**: Execute actions automatically at set intervals.
+- **Audio Device Selection**: Select a specific audio output device for `play_sound` and `playlist` actions.
+- **Fade Out**: `stop_playlist` now smoothly fades out music over 1.5 seconds.
+- **Process Cleanup**: Launcher now automatically detects and kills orphaned bot processes to prevent port conflicts.
 
-- **Flexible Action System**
-  - Custom chat commands (!command)
-  - Event triggers (raids, subs, OBS scenes)
-  - Sub-actions: play sounds, delays, chat responses, OBS control
-  - Action grouping and organization
-  - Sound playback with auto-stop functionality
+### Fixed
+- **Port Usage**: Fixed "Address already in use" errors by enabling `SO_REUSEADDR` and improving process termination.
+- **Command Recognition**: Commands are now recognized even if the Web Dashboard is closed.
+- **Twitch Chat**: Usernames now display with correct capitalization (Display Name).
 
-- **GUI Launcher**
-  - Modern dark theme with CustomTkinter
-  - Dashboard tab for bot control and logs
-  - Settings editor for config.yaml
-  - Accounts management (Twitch/YouTube login)
-  - Actions Editor with visual trigger/sub-action builder
-
-- **Web Dashboard**
-  - Real-time chat view (Twitch + YouTube combined)
-  - Send messages to chat
-  - Emote rendering support
-  - Badge display (Mod, VIP, Sub, Broadcaster)
-  - Reconnection handling (10s interval)
-
-- **Documentation**
-  - Bilingual documentation (German & English)
-  - Comprehensive README with installation guide
-  - YouTube API setup guide with quota optimization tips
-  - Troubleshooting section
-
-- **Branding**
-  - Professional logo design
-  - Modernized UI text styling
-  - Consistent branding across launcher and web dashboard
-
-### Technical Details
-- Python 3.10+ support
-- Dependencies: TwitchIO, Google APIs, obs-websocket-py, CustomTkinter, Pygame
-- Async architecture with asyncio
-- WebSocket event server for real-time communication
-- HTTP server for web dashboard
-
-### Known Limitations
-- YouTube quota limited to 10,000 units/day (requires personal API project)
-- OBS WebSocket must be enabled manually
-- Port conflicts can occur if bot doesn't shut down cleanly
-
----
-
-**Full Changelog**: First Alpha Release
+### Changed
+- **Documentation**: `README.md` is now in English by default (German moved to `README_DE.md`).

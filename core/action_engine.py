@@ -4,6 +4,8 @@ import asyncio
 import logging
 import pygame.mixer as sa # alias to keep code similar or just rename
 import time
+import random
+import pygame._sdl2.audio as sdl_audio
 
 # Logging setup
 logger = logging.getLogger("ActionEngine")
@@ -17,9 +19,14 @@ class ActionEngine:
         self.youtube = youtube_bot
         self.actions = []
         
+        self.timer_tasks = []
+        self.playlist_task = None
+        self.current_audio_device = None # Tracks current mixer device
+        
         self.load_actions()
 
     def load_actions(self):
+        self.stop_timers()
         if not os.path.exists(self.config_file):
             self.actions = []
             return
@@ -29,6 +36,33 @@ class ActionEngine:
             self.actions = data.get('actions', [])
         
         print(f"[ActionEngine] Loaded {len(self.actions)} actions.")
+        self.start_timers()
+
+    def stop_timers(self):
+        for t in self.timer_tasks:
+            t.cancel()
+        self.timer_tasks.clear()
+
+    def start_timers(self):
+        for action in self.actions:
+            if not action.get('enabled', True): continue
+            
+            for trigger in action.get('triggers', []):
+                 if trigger.get('type') == 'timer':
+                     interval = trigger.get('interval', 60)
+                     # Start Timer Task
+                     task = asyncio.create_task(self.run_timer(action, interval))
+                     self.timer_tasks.append(task)
+
+    async def run_timer(self, action, interval):
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                # Execute
+                print(f"[Timer] Executing {action['name']}")
+                asyncio.create_task(self.execute_action(action, {}))
+        except asyncio.CancelledError:
+            pass
 
     def save_actions(self):
         data = {'actions': self.actions}
@@ -136,9 +170,11 @@ class ActionEngine:
         # --- MEDIA ---
         elif sa_type == "play_sound":
             file_path = self.replace_vars(config.get('file', ''), ctx)
+            device = config.get('device', None)
+            
             if os.path.exists(file_path):
                  # Run in thread to not block loop
-                 await asyncio.to_thread(self.play_sound_sync, file_path)
+                 await asyncio.to_thread(self.play_sound_sync, file_path, device)
             else:
                 print(f"[ActionError] Sound file not found: {file_path}")
 
@@ -146,6 +182,84 @@ class ActionEngine:
             if sa.get_init():
                 sa.stop() # Stops all playback on all channels
                 print("[Action] Stopped all sounds.")
+                
+        elif sa_type == "playlist":
+            folder = self.replace_vars(config.get('folder', ''), ctx)
+            device = config.get('device', None)
+            
+            if self.playlist_task:
+                self.playlist_task.cancel()
+            
+            self.playlist_task = asyncio.create_task(self.run_playlist(folder, device))
+            
+        elif sa_type == "stop_playlist":
+            if self.playlist_task:
+                self.playlist_task.cancel()
+                self.playlist_task = None
+                print("[Action] Playlist stopped.")
+                
+                # Stop current playback with fadeout
+                if sa.get_init():
+                    sa.fadeout(1500)
+
+    async def run_playlist(self, folder, device=None):
+        print(f"[Playlist] Starting playlist from {folder} on {device or 'Default'}")
+        try:
+            while True:
+                if not os.path.exists(folder):
+                    print(f"[Playlist] Folder not found: {folder}")
+                    break
+                
+                # Scan
+                files = [f for f in os.listdir(folder) if f.lower().endswith(('.mp3', '.wav', '.ogg'))]
+                if not files:
+                    print("[Playlist] No files found.")
+                    break
+                    
+                # Pick Random
+                choice = random.choice(files)
+                full_path = os.path.join(folder, choice)
+                
+                # Play & Get Duration
+                duration = await asyncio.to_thread(self.play_sound_get_duration, full_path, device)
+                
+                # Wait
+                await asyncio.sleep(duration)
+                
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"[Playlist] Error: {e}")
+
+    def play_sound_get_duration(self, path, device=None):
+        try:
+            self._ensure_audio_device(device)
+            snd = sa.Sound(path)
+            snd.play()
+            return snd.get_length()
+        except:
+            return 0
+
+    def _ensure_audio_device(self, device_name):
+        """Initializes mixer with specific device if changed."""
+        if device_name is None: return # Keep current
+        
+        # If device changed or mixer not init
+        if not sa.get_init() or self.current_audio_device != device_name:
+            if sa.get_init():
+                sa.quit()
+                print(f"[Audio] Switching device to: {device_name}")
+            
+            try:
+                # 'Default' is a special keyword if user selects it we pass None?
+                # Actually SDL2 uses specific names. If user passes 'Default', we might handle it.
+                dev = device_name if device_name != 'Default' else None
+                sa.init(devicename=dev)
+                self.current_audio_device = device_name
+            except Exception as e:
+                print(f"[Audio] Failed to init device {device_name}: {e}. Fallback to default.")
+                sa.init()
+                self.current_audio_device = 'Default'
 
     def replace_vars(self, text, ctx):
         if not isinstance(text, str): return text
@@ -153,10 +267,9 @@ class ActionEngine:
             text = text.replace(f"%{k}%", str(v))
         return text
 
-    def play_sound_sync(self, path):
+    def play_sound_sync(self, path, device=None):
         try:
-            if not sa.get_init():
-                sa.init()
+            self._ensure_audio_device(device)
             
             # Use Sound object for SFX (allows overlapping sounds)
             sound = sa.Sound(path)

@@ -3,6 +3,10 @@ config.yaml
 token_*.json
 client_secret.json
 .yt_control
+.bot_status
+
+# User Data
+profiles/
 
 # Python
 __pycache__/

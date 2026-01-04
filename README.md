@@ -1,45 +1,45 @@
 # OpenStreamBot
 
 **Version:** 0.1 Alpha  
-**Ein Multi-Plattform Stream-Bot für Twitch & YouTube**
+**A Multi-Platform Stream Bot for Twitch & YouTube**
 
-OpenStreamBot ist ein Open-Source-Bot für Streamer, der Twitch und YouTube integriert, OBS Studio steuern kann und ein flexibles Action-System bietet. Ideal für Creator, die ihre Streams automatisieren und interaktiver gestalten möchten.
+OpenStreamBot is an open-source bot for streamers that integrates Twitch and YouTube, can control OBS Studio, and offers a flexible action system. Perfect for creators who want to automate and make their streams more interactive.
 
 ---
 
 ## 🎯 Features
 
-- **Multi-Plattform Chat**: Twitch und YouTube Live-Chat in einem Dashboard
-- **OBS Studio Integration**: Szenen wechseln, Quellen steuern, auf OBS-Events reagieren
-- **Flexibles Action-System**: 
-  - Eigene Befehle erstellen (!command)
-  - Sounds abspielen (mit Auto-Stop)
-  - Auf Events reagieren (Raids, Subs, etc.)
-  - Gruppierung und Organisation
-- **Web Dashboard**: Moderne Web-UI für Chat-Verwaltung und Übersicht
-- **Quota-Optimierung**: YouTube nur auf Knopfdruck aktivieren (spart API-Quota)
-- **GUI Launcher**: Einfache Verwaltung über Desktop-Anwendung
+- **Multi-Platform Chat**: Twitch and YouTube Live Chat in one dashboard
+- **OBS Studio Integration**: Switch scenes, control sources, react to OBS events
+- **Flexible Action System**: 
+  - Create custom commands (!command)
+  - Play sounds (with auto-stop)
+  - React to events (raids, subs, etc.)
+  - Grouping and organization
+- **Web Dashboard**: Modern web UI for chat management and overview
+- **Quota Optimization**: Activate YouTube only on-demand (saves API quota)
+- **GUI Launcher**: Easy management via desktop application
 
 ---
 
-## 📋 Voraussetzungen
+## 📋 Requirements
 
-- **Python 3.10+** (empfohlen: 3.12)
-- **OBS Studio** (optional, für OBS-Features)
-- **OBS WebSocket Plugin** (ab OBS 28+ bereits integriert)
-- **Betriebssystem**: Linux, macOS, oder Windows
+- **Python 3.10+** (recommended: 3.12)
+- **OBS Studio** (optional, for OBS features)
+- **OBS WebSocket Plugin** (integrated in OBS 28+)
+- **Operating System**: Linux, macOS, or Windows
 
 ---
 
 ## 🚀 Installation
 
-### 🛠️ Betriebssystem-spezifische Installation
+### 🛠️ OS-Specific Installation
 
 #### **Windows**
-1. **Python installieren**: Lade Python 3.10+ von [python.org](https://www.python.org/downloads/windows/) herunter (Häkchen bei "Add Python to PATH" setzen!).
-2. **Klonen**: `git clone https://github.com/JanVanPommes/OpenStreamBot.git`
-3. **Einrichten**: Doppelklick auf `start.bat`. Das Skript fragt nach der venv-Erstellung beim ersten Mal.
-   - *Alternativ manuell*:
+1. **Install Python**: Download Python 3.10+ from [python.org](https://www.python.org/downloads/windows/) (Check "Add Python to PATH"!).
+2. **Clone**: `git clone https://github.com/JanVanPommes/OpenStreamBot.git`
+3. **Setup**: Double-click `start.bat`. It will help you create a venv on first run.
+   - *Manual alternative*:
      ```cmd
      python -m venv venv
      venv\Scripts\activate
@@ -47,9 +47,9 @@ OpenStreamBot ist ein Open-Source-Bot für Streamer, der Twitch und YouTube inte
      ```
 
 #### **macOS**
-1. **Python / Homebrew**: `brew install python` (falls Homebrew installiert ist).
-2. **Klonen**: `git clone https://github.com/JanVanPommes/OpenStreamBot.git`
-3. **Einrichten**:
+1. **Python / Homebrew**: `brew install python` (standard if Homebrew is installed).
+2. **Clone**: `git clone https://github.com/JanVanPommes/OpenStreamBot.git`
+3. **Setup**:
    ```bash
    python3 -m venv venv
    source venv/bin/activate
@@ -63,7 +63,7 @@ OpenStreamBot ist ein Open-Source-Bot für Streamer, der Twitch und YouTube inte
    sudo apt update
    sudo apt install python3-venv python3-tk
    ```
-2. **Klonen & Einrichten**:
+2. **Clone & Setup**:
    ```bash
    git clone https://github.com/JanVanPommes/OpenStreamBot.git
    cd OpenStreamBot
@@ -73,13 +73,13 @@ OpenStreamBot ist ein Open-Source-Bot für Streamer, der Twitch und YouTube inte
    chmod +x start_launcher.sh
    ```
 
-### 4. Konfiguration erstellen
-Kopiere die Beispiel-Konfiguration:
+### 4. Create Configuration
+Copy the example configuration:
 ```bash
 cp config.example.yaml config.yaml
 ```
 
-Bearbeite `config.yaml` mit deinen Daten:
+Edit `config.yaml` with your data:
 ```yaml
 server:
   host: localhost
@@ -87,206 +87,206 @@ server:
 
 twitch:
   enabled: true
-  client_id: DEINE_TWITCH_CLIENT_ID      # Von https://dev.twitch.tv/console
-  client_secret: DEIN_TWITCH_SECRET
-  channel: dein_twitch_username
+  client_id: YOUR_TWITCH_CLIENT_ID      # From https://dev.twitch.tv/console
+  client_secret: YOUR_TWITCH_SECRET
+  channel: your_twitch_username
 
 youtube:
-  enabled: true  # Auf false setzen, wenn nicht benötigt
+  enabled: true  # Set to false if not needed
   client_secret_file: client_secret.json
   token_file: token_youtube.json
 
 obs:
   host: localhost
   port: 4455
-  password: ''  # Dein OBS WebSocket Passwort (falls gesetzt)
+  password: ''  # Your OBS WebSocket password (if set)
 ```
 
 ---
 
-## 🔐 Accounts verbinden
+## 🔐 Connect Accounts
 
 ### Twitch
-1. Erstelle eine App auf [Twitch Developer Console](https://dev.twitch.tv/console/apps)
+1. Create an app on [Twitch Developer Console](https://dev.twitch.tv/console/apps)
 2. **OAuth Redirect URL**: `http://localhost:8080`
-3. Kopiere **Client ID** und **Secret** in `config.yaml`
-4. Starte den Launcher: `python launcher.py`
-5. Gehe zu **Accounts** → **"Login with Twitch"**
+3. Copy **Client ID** and **Secret** to `config.yaml`
+4. Start the launcher: `python launcher.py`
+5. Go to **Accounts** → **"Login with Twitch"**
 
 ### YouTube (Optional)
-Für YouTube benötigst du ein eigenes Google Cloud Project wegen API-Quota-Limits.
+For YouTube, you need your own Google Cloud Project due to API quota limits.
 
-➡️ **Detaillierte Anleitung**: Siehe [`YOUTUBE_SETUP.md`](YOUTUBE_SETUP.md)
+➡️ **Detailed Guide**: See [`YOUTUBE_SETUP_EN.md`](YOUTUBE_SETUP_EN.md)
 
-**Kurzfassung**:
-1. [Google Cloud Console](https://console.cloud.google.com/) → Projekt erstellen
-2. YouTube Data API v3 aktivieren
-3. OAuth-Client (Desktop-App) erstellen
-4. `client_secret.json` herunterladen und im Projektordner ablegen
-5. Im Launcher: **Accounts** → **"Login with Google"**
+**Quick Summary**:
+1. [Google Cloud Console](https://console.cloud.google.com/) → Create project
+2. Enable YouTube Data API v3
+3. Create OAuth Client (Desktop App)
+4. Download `client_secret.json` and place in project folder
+5. In Launcher: **Accounts** → **"Login with Google"**
 
 ---
 
-## ▶️ Bot starten
+## ▶️ Start Bot
 
-- **Windows**: Doppelklick auf `start.bat`
-- **Linux/macOS**: `./start_launcher.sh` im Terminal oder `python launcher.py`
+- **Windows**: Double-click `start.bat`
+- **Linux/macOS**: `./start_launcher.sh` in terminal or `python launcher.py`
 ```bash
-# Manuelle Ausführung
+# Manual execution
 python launcher.py
 ```
 
-- **Dashboard**: Bot starten/stoppen, Logs anzeigen
-- **Settings**: Config bearbeiten
-- **Accounts**: Twitch/YouTube Login verwalten
-- **Actions Editor**: Eigene Commands und Aktionen erstellen
+- **Dashboard**: Start/stop bot, view logs
+- **Settings**: Edit config
+- **Accounts**: Manage Twitch/YouTube login
+- **Actions Editor**: Create custom commands and actions
 
-### Headless (nur Bot, kein GUI)
+### Headless (bot only, no GUI)
 ```bash
 python main.py
 ```
 
 ---
 
-## 🎮 OBS Studio einrichten
+## 🎮 OBS Studio Setup
 
-1. **OBS starten** (Version 28+ empfohlen)
-2. **Extras** → **WebSocket Server Einstellungen**
-3. **Server aktivieren** (Port standardmäßig 4455)
-4. Optional: **Passwort setzen** (dann in `config.yaml` eintragen)
-5. Bot starten → Verbindung wird automatisch hergestellt
+1. **Start OBS** (version 28+ recommended)
+2. **Tools** → **WebSocket Server Settings**
+3. **Enable Server** (default port 4455)
+4. Optional: **Set password** (then add to `config.yaml`)
+5. Start bot → Connection established automatically
 
 ---
 
-## 📝 Actions erstellen
+## 📝 Create Actions
 
-Das Action-System ermöglicht es dir, eigene Befehle und Reaktionen zu erstellen:
+The action system allows you to create custom commands and reactions:
 
-### Beispiel: Sound-Befehl
-1. Launcher starten → **Actions Editor** Tab
-2. **"+ New Action"** klicken
+### Example: Sound Command
+1. Start launcher → **Actions Editor** tab
+2. Click **"+ New Action"**
 3. Name: `Fanfare`
 4. **"+ Add Trigger"** → `twitch_command` → `!fanfare`
-5. **"+ Add Sub-Action"** → `play_sound` → Sound-Datei auswählen
+5. **"+ Add Sub-Action"** → `play_sound` → Select sound file
 6. **"Save Actions"**
 
-Ab jetzt wird bei `!fanfare` im Chat der Sound abgespielt! 🎺
+Now `!fanfare` in chat will play the sound! 🎺
 
-### Weitere Möglichkeiten:
-- **OBS-Szene wechseln** bei bestimmten Commands
-- **Chat-Nachrichten** senden als Antwort
-- **Delays** zwischen Aktionen
-- **Sounds stoppen** nach X Sekunden
+### More Possibilities:
+- **Switch OBS scene** on specific commands
+- **Send chat messages** as responses
+- **Delays** between actions
+- **Stop sounds** after X seconds
 
 ---
 
 ## 🌐 Web Dashboard
 
-Nach dem Start erreichbar unter:
+Available after starting at:
 ```
 http://localhost:8000/interface/dashboard.html
 ```
 
 Features:
-- Live-Chat-Ansicht (Twitch + YouTube vereint)
-- Nachrichten senden
-- Emote-Unterstützung
-- Badge-Anzeige (Mod, VIP, Sub, etc.)
+- Live chat view (Twitch + YouTube combined)
+- Send messages
+- Emote support
+- Badge display (Mod, VIP, Sub, etc.)
 
 ---
 
-## 📊 Projektstruktur
+## 📊 Project Structure
 
 ```
 OpenStreamBot/
 ├── launcher.py              # GUI Launcher
-├── main.py                  # Hauptprogramm (headless)
-├── config.yaml              # Deine Konfiguration
-├── actions.yaml             # Gespeicherte Actions
-├── requirements.txt         # Python-Abhängigkeiten
-├── YOUTUBE_SETUP.md         # YouTube API Setup Guide
+├── main.py                  # Main program (headless)
+├── config.yaml              # Your configuration
+├── actions.yaml             # Saved actions
+├── requirements.txt         # Python dependencies
+├── YOUTUBE_SETUP_EN.md      # YouTube API Setup Guide
 │
-├── core/                    # Kernmodule
-│   ├── event_server.py      # WebSocket Event-System
-│   ├── action_engine.py     # Action-Ausführung
-│   └── http_server.py       # Web-Server für Dashboard
+├── core/                    # Core modules
+│   ├── event_server.py      # WebSocket event system
+│   ├── action_engine.py     # Action execution
+│   └── http_server.py       # Web server for dashboard
 │
-├── platforms/               # Plattform-Integrationen
-│   ├── twitch_bot.py        # Twitch Chat Bot
-│   ├── youtube_bot.py       # YouTube Live Chat
-│   └── obs_controller.py    # OBS WebSocket Client
+├── platforms/               # Platform integrations
+│   ├── twitch_bot.py        # Twitch chat bot
+│   ├── youtube_bot.py       # YouTube live chat
+│   └── obs_controller.py    # OBS WebSocket client
 │
-└── interface/               # GUI & Web-Interfaces
-    ├── gui_actions.py       # Actions Editor (GUI)
-    ├── dashboard.html       # Web Dashboard
-    └── dashboard.js         # Dashboard Logic
+└── interface/               # GUI & web interfaces
+    ├── gui_actions.py       # Actions editor (GUI)
+    ├── dashboard.html       # Web dashboard
+    └── dashboard.js         # Dashboard logic
 ```
 
 ---
 
 ## 🛠️ Troubleshooting
 
-### "Port 8000 / 8080 bereits belegt"
-Ein alter Bot-Prozess läuft noch im Hintergrund:
+### "Port 8000 / 8080 already in use"
+An old bot process is still running in the background:
 ```bash
 pkill -f main.py
 ```
-Oder: Launcher komplett schließen, kurz warten, neu starten.
+Or: Close launcher completely, wait briefly, restart.
 
 ### YouTube: "Quota Exceeded"
-- **Ursache**: Tägliches API-Limit erreicht (10.000 Units)
-- **Lösung**: 
-  - Nutze den **"Connect YouTube Stream"** Button nur bei Bedarf
-  - Quota wird täglich um ~9:00 Uhr MEZ zurückgesetzt
-  - Siehe [`YOUTUBE_SETUP.md`](YOUTUBE_SETUP.md) für Optimierungstipps
+- **Cause**: Daily API limit reached (10,000 units)
+- **Solution**: 
+  - Use the **"Connect YouTube Stream"** button only when needed
+  - Quota resets daily around 9:00 AM CET
+  - See [`YOUTUBE_SETUP_EN.md`](YOUTUBE_SETUP_EN.md) for optimization tips
 
-### OBS verbindet nicht
-- Prüfe, ob **WebSocket Server** in OBS aktiviert ist
-- Passwort in `config.yaml` korrekt?
-- OBs läuft auf dem gleichen PC?
+### OBS not connecting
+- Check if **WebSocket Server** is enabled in OBS
+- Password correct in `config.yaml`?
+- OBS running on the same PC?
 
-### Sounds spielen nicht ab
-- Dateiformat unterstützt? (MP3, WAV, OGG)
-- Pfad zur Datei korrekt? (Absolute Pfade nutzen)
-- Prüfe Logs auf Fehlermeldungen
+### Sounds not playing
+- File format supported? (MP3, WAV, OGG)
+- File path correct? (Use absolute paths)
+- Check logs for error messages
 
 ---
 
 ## 🤝 Contributing
 
-Beiträge sind willkommen! 
+Contributions are welcome! 
 
-1. Fork das Repository
-2. Feature-Branch erstellen: `git checkout -b feature/MeinFeature`
-3. Commit: `git commit -m 'Add: Mein neues Feature'`
-4. Push: `git push origin feature/MeinFeature`
-5. Pull Request öffnen
+1. Fork the repository
+2. Create feature branch: `git checkout -b feature/MyFeature`
+3. Commit: `git commit -m 'Add: My new feature'`
+4. Push: `git push origin feature/MyFeature`
+5. Open pull request
 
 ---
 
-## 📄 Lizenz
+## 📄 License
 
-Dieses Projekt steht unter der [MIT License](LICENSE).
+This project is licensed under the [MIT License](LICENSE).
 
 ---
 
 ## 🐛 Bug Reports & Feature Requests
 
-Nutze die [GitHub Issues](https://github.com/JanVanPommes/OpenStreamBot/issues) um:
-- Bugs zu melden
-- Features vorzuschlagen
-- Fragen zu stellen
+Use [GitHub Issues](https://github.com/JanVanPommes/OpenStreamBot/issues) to:
+- Report bugs
+- Suggest features
+- Ask questions
 
 ---
 
 ## 🙏 Credits
 
-- **TwitchIO**: Twitch Chat Integration
-- **Google APIs**: YouTube Live Chat
-- **obs-websocket-py**: OBS Studio Control
-- **CustomTkinter**: Moderne GUI
-- **Pygame**: Audio Playback
+- **TwitchIO**: Twitch chat integration
+- **Google APIs**: YouTube live chat
+- **obs-websocket-py**: OBS Studio control
+- **CustomTkinter**: Modern GUI
+- **Pygame**: Audio playback
 
 ---
 
-**Viel Erfolg mit deinem Stream! 🎬🚀**
+**Good luck with your stream! 🎬🚀**

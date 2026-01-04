@@ -10,7 +10,9 @@ import queue
 import time
 from tkinter import messagebox
 from interface.gui_actions import ActionEditorFrame
+from core.profile_manager import ProfileManager
 from PIL import Image
+import signal
 
 # Erscheinungsbild setzen
 ctk.set_appearance_mode("Dark")
@@ -41,6 +43,9 @@ class App(ctk.CTk):
 
         self.bot_process = None
         self.log_queue = queue.Queue()
+        self.profile_manager = ProfileManager()
+        
+        self.kill_existing_bot()
         
         # Grid Layout
         self.grid_columnconfigure(1, weight=1)
@@ -92,11 +97,14 @@ class App(ctk.CTk):
         self.sidebar_button_4 = ctk.CTkButton(self.sidebar_frame, text="Actions Editor", command=self.show_actions_frame)
         self.sidebar_button_4.grid(row=5, column=0, padx=20, pady=10)
 
+        self.sidebar_button_5 = ctk.CTkButton(self.sidebar_frame, text="Profiles", command=self.show_profiles_frame)
+        self.sidebar_button_5.grid(row=6, column=0, padx=20, pady=10)
+
         self.status_label = ctk.CTkLabel(self.sidebar_frame, text="Status: Bot Offline", text_color="gray")
-        self.status_label.grid(row=6, column=0, padx=20, pady=(10, 0))
+        self.status_label.grid(row=7, column=0, padx=20, pady=(10, 0))
 
         self.obs_status_label = ctk.CTkLabel(self.sidebar_frame, text="OBS: Offline", text_color="gray")
-        self.obs_status_label.grid(row=7, column=0, padx=20, pady=(0, 20))
+        self.obs_status_label.grid(row=8, column=0, padx=20, pady=(0, 20))
 
         # Start status monitoring thread
         self.status_thread = threading.Thread(target=self.status_monitor, daemon=True)
@@ -110,7 +118,11 @@ class App(ctk.CTk):
         self.setup_settings_frame()
         self.accounts_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.setup_accounts_frame()
+        self.accounts_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        self.setup_accounts_frame()
         self.actions_frame = ActionEditorFrame(self) # New Editor Frame
+        self.profiles_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        self.setup_profiles_frame()
 
         # Start with Dashboard
         self.show_dashboard_frame()
@@ -280,12 +292,14 @@ class App(ctk.CTk):
         self.settings_frame.grid_forget()
         self.accounts_frame.grid_forget()
         self.actions_frame.grid_forget()
+        self.profiles_frame.grid_forget()
         self.dashboard_frame.grid(row=0, column=1, sticky="nsew")
 
     def show_settings_frame(self):
         self.dashboard_frame.grid_forget()
         self.accounts_frame.grid_forget()
         self.actions_frame.grid_forget()
+        self.profiles_frame.grid_forget()
         self.settings_frame.grid(row=0, column=1, sticky="nsew")
         self.load_config_to_ui()
 
@@ -293,6 +307,7 @@ class App(ctk.CTk):
         self.dashboard_frame.grid_forget()
         self.settings_frame.grid_forget()
         self.actions_frame.grid_forget()
+        self.profiles_frame.grid_forget()
         self.accounts_frame.grid(row=0, column=1, sticky="nsew")
         self.update_account_status()
 
@@ -300,8 +315,118 @@ class App(ctk.CTk):
         self.dashboard_frame.grid_forget()
         self.settings_frame.grid_forget()
         self.accounts_frame.grid_forget()
+        self.profiles_frame.grid_forget()
         self.actions_frame.grid(row=0, column=1, sticky="nsew")
 
+    def show_profiles_frame(self):
+        self.dashboard_frame.grid_forget()
+        self.settings_frame.grid_forget()
+        self.accounts_frame.grid_forget()
+        self.actions_frame.grid_forget()
+        self.profiles_frame.grid(row=0, column=1, sticky="nsew")
+        self.refresh_profile_list()
+
+    def setup_profiles_frame(self):
+        self.prof_label = ctk.CTkLabel(self.profiles_frame, text="Profile Manager", font=ctk.CTkFont(size=24, weight="bold"))
+        self.prof_label.grid(row=0, column=0, padx=20, pady=20, sticky="w")
+        
+        # Helper Text
+        ctk.CTkLabel(self.profiles_frame, text="Profiles allow you to switch between different bot configurations.").grid(row=1, column=0, padx=20, sticky="w")
+        
+        # Content Area
+        self.prof_content = ctk.CTkFrame(self.profiles_frame)
+        self.prof_content.grid(row=2, column=0, padx=20, pady=20, sticky="nsew")
+        
+        # List
+        self.prof_listbox = ctk.CTkScrollableFrame(self.prof_content, width=300, height=300)
+        self.prof_listbox.pack(side="left", fill="y", padx=10, pady=10)
+        
+        # Controls
+        self.prof_controls = ctk.CTkFrame(self.prof_content, fg_color="transparent")
+        self.prof_controls.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+        
+        ctk.CTkLabel(self.prof_controls, text="Enter Profile Name:").pack(pady=(0,5))
+        self.entry_profile = ctk.CTkEntry(self.prof_controls)
+        self.entry_profile.pack(pady=5, fill="x")
+        
+        self.btn_create_prof = ctk.CTkButton(self.prof_controls, text="Save Current as New Profile", command=self.create_profile)
+        self.btn_create_prof.pack(pady=10, fill="x")
+        
+        self.btn_save_prof = ctk.CTkButton(self.prof_controls, text="overwrite Selected Profile", fg_color="orange", command=self.save_to_selected_profile)
+        self.btn_save_prof.pack(pady=10, fill="x")
+        
+        self.btn_load_prof = ctk.CTkButton(self.prof_controls, text="Load Selected Profile", fg_color="green", command=self.load_selected_profile)
+        self.btn_load_prof.pack(pady=10, fill="x")
+        
+        self.btn_del_prof = ctk.CTkButton(self.prof_controls, text="Delete Selected Profile", fg_color="red", command=self.delete_selected_profile)
+        self.btn_del_prof.pack(pady=10, fill="x")
+        
+        self.selected_profile_btn = None
+        self.selected_profile_name = None
+
+    def refresh_profile_list(self):
+        for w in self.prof_listbox.winfo_children(): w.destroy()
+        
+        profiles = self.profile_manager.get_profiles()
+        for p in profiles:
+            btn = ctk.CTkButton(self.prof_listbox, text=p, command=lambda n=p: self.select_profile(n),
+                                fg_color="transparent", border_width=1, text_color=("gray10", "gray90"))
+            btn.pack(fill="x", pady=2)
+            
+    def select_profile(self, name):
+        self.selected_profile_name = name
+        self.entry_profile.delete(0, "end")
+        self.entry_profile.insert(0, name)
+        # Visual feedback could be added here (highlight button)
+
+    def create_profile(self):
+        name = self.entry_profile.get()
+        if not name:
+            messagebox.showerror("Error", "Please enter a profile name!")
+            return
+        if not name.isalnum(): # Simple check
+             if not messagebox.askyesno("Warning", "Profile name contains special characters. Continue?"): return
+             
+        self.profile_manager.save_profile(name)
+        messagebox.showinfo("Success", f"Profile '{name}' saved.")
+        self.refresh_profile_list()
+
+    def save_to_selected_profile(self):
+        if not self.selected_profile_name: return
+        if messagebox.askyesno("Confirm", f"Overwrite profile '{self.selected_profile_name}' with current settings?"):
+            self.profile_manager.save_profile(self.selected_profile_name)
+            messagebox.showinfo("Success", "Profile updated.")
+
+    def load_selected_profile(self):
+        if not self.selected_profile_name: return
+        if self.bot_process:
+            if not messagebox.askyesno("Warning", "Bot is running! It must be stopped to load a profile. Stop Bot now?"):
+                return
+            self.stop_bot()
+            
+        try:
+            self.profile_manager.load_profile(self.selected_profile_name)
+            messagebox.showinfo("Success", f"Profile '{self.selected_profile_name}' loaded.\nYou can now start the bot.")
+            # Update UI config view if needed
+            self.load_config_to_ui()
+            # Also Action Editor might need refresh if it was open, but it reloads from file on init. 
+            # We can force refresh it:
+            self.actions_frame.load_actions() 
+            self.actions_frame.refresh_action_list() # This method exists in my head, let's hope it's in gui_actions.py. Yes it is.
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+    def delete_selected_profile(self):
+        if not self.selected_profile_name: return
+        if messagebox.askyesno("Confirm", f"Delete profile '{self.selected_profile_name}'?"):
+            import shutil
+            path = os.path.join(self.profile_manager.profile_dir, self.selected_profile_name)
+            try:
+                shutil.rmtree(path)
+                self.selected_profile_name = None
+                self.refresh_profile_list()
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
     def load_config_to_ui(self):
         try:
             with open(CONFIG_FILE, "r") as f:
@@ -368,11 +493,39 @@ class App(ctk.CTk):
     def stop_bot(self):
         if self.bot_process:
             self.bot_process.terminate()
+            try:
+                self.bot_process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.bot_process.kill()
+                
             self.bot_process = None
             self.start_btn.configure(text="Start Bot", fg_color="green", hover_color="darkgreen")
             self.status_label.configure(text="Status: Offline", text_color="red")
             self.yt_connect_btn.configure(state="disabled", text="Connect YouTube Stream", fg_color="#FF0000")
             self.log_queue.put("\n[System] Bot stopped.\n")
+
+    def kill_existing_bot(self):
+        """Checks for existing bot process from previous run and kills it."""
+        import json
+        if os.path.exists(".bot_status"):
+            try:
+                with open(".bot_status", "r") as f:
+                    status = json.load(f)
+                pid = status.get("pid")
+                if pid:
+                    try:
+                        os.kill(pid, 0) # Check if running
+                        print(f"Found orphan bot process {pid}, killing it...")
+                        os.kill(pid, signal.SIGTERM)
+                        time.sleep(1)
+                        try:
+                             os.kill(pid, 0)
+                             os.kill(pid, signal.SIGKILL)
+                        except: pass
+                    except OSError:
+                        pass # Not running
+            except Exception as e:
+                print(f"Error cleaning up: {e}")
 
     def read_output(self):
         while self.bot_process and self.bot_process.poll() is None:

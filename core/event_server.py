@@ -27,9 +27,6 @@ class EventServer:
 
     async def broadcast(self, event_type, data):
         """Sendet Daten an alle verbundenen Clients (OBS/Browser)"""
-        if not self.clients:
-            return
-        
         payload = json.dumps({"event": event_type, "data": data})
         
         # 1. Internal Listeners (Action Engine)
@@ -60,5 +57,5 @@ class EventServer:
 
     async def start(self):
         print(f"[System] WebSocket Server startet auf ws://{self.host}:{self.port}")
-        async with websockets.serve(self.handler, self.host, self.port):
+        async with websockets.serve(self.handler, self.host, self.port, reuse_address=True):
             await asyncio.Future() # Hält den Server am Leben
