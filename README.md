@@ -1,6 +1,6 @@
 # OpenStreamBot
 
-**Version:** 0.1 Alpha  
+**Version:** 0.1.1 Alpha  
 **A Multi-Platform Stream Bot for Twitch & YouTube**
 
 OpenStreamBot is an open-source bot for streamers that integrates Twitch and YouTube, can control OBS Studio, and offers a flexible action system. Perfect for creators who want to automate and make their streams more interactive.
