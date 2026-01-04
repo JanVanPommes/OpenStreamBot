@@ -13,9 +13,12 @@ OpenStreamBot is an open-source bot for streamers that integrates Twitch and You
 - **OBS Studio Integration**: Switch scenes, control sources, react to OBS events
 - **Flexible Action System**: 
   - Create custom commands (!command)
-  - Play sounds (with auto-stop)
+  - Play sounds (with auto-stop & device selection)
+  - **New:** Playlists (Random music folder playback)
+  - **New:** Timer Triggers (Interval based actions)
   - React to events (raids, subs, etc.)
   - Grouping and organization
+- **Profile Manager**: Save and load different bot configurations
 - **Web Dashboard**: Modern web UI for chat management and overview
 - **Quota Optimization**: Activate YouTube only on-demand (saves API quota)
 - **GUI Launcher**: Easy management via desktop application
@@ -140,6 +143,7 @@ python launcher.py
 - **Settings**: Edit config
 - **Accounts**: Manage Twitch/YouTube login
 - **Actions Editor**: Create custom commands and actions
+- **Profiles**: Switch between different configurations
 
 ### Headless (bot only, no GUI)
 ```bash
@@ -171,6 +175,14 @@ The action system allows you to create custom commands and reactions:
 6. **"Save Actions"**
 
 Now `!fanfare` in chat will play the sound! 🎺
+174: 
+175: ### New in 0.1.1:
+176: - **Profiles**: Use the **Profiles** tab in the launcher to save your current config as a named profile (e.g. "Gaming", "Just Chatting") and switch between them.
+177: - **Audio Devices**: In `play_sound` or `playlist` actions, you can now select a specific audio output device.
+178: - **Playlist**: Add a `playlist` sub-action, select a music folder, and the bot will play random songs from it continuously. Stop it with `stop_playlist`.
+179: - **Timer**: Use the `timer` trigger to run actions every X seconds (e.g. for chat announcements).
+180: 
+181: ### More Possibilities:
 
 ### More Possibilities:
 - **Switch OBS scene** on specific commands
