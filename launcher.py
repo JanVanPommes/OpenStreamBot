@@ -156,6 +156,20 @@ class App(ctk.CTk):
 
         self.log_textbox = ctk.CTkTextbox(self.dashboard_frame, width=600, height=300)
         self.log_textbox.grid(row=3, column=0, padx=20, pady=5, sticky="nsew")
+        
+        # Configure Tags for ANSI Colors
+        # Access underlying tkinter widget for tags
+        try:
+            tb = self.log_textbox._textbox
+            tb.tag_config("red", foreground="#FF5555")
+            tb.tag_config("green", foreground="#50FA7B")
+            tb.tag_config("yellow", foreground="#F1FA8C")
+            tb.tag_config("cyan", foreground="#8BE9FD")
+            tb.tag_config("grey", foreground="#6272A4")
+            tb.tag_config("reset", foreground="#F8F8F2") # Default/White
+        except:
+             pass # Fallback if internal structure changes
+
         self.dashboard_frame.grid_rowconfigure(3, weight=1)
         self.dashboard_frame.grid_columnconfigure(0, weight=1)
 
@@ -571,11 +585,41 @@ class App(ctk.CTk):
         self.start_btn.configure(text="Start Bot", fg_color="green", hover_color="darkgreen")
         self.status_label.configure(text="Status: Offline", text_color="red")
 
+    def append_ansi_text(self, text):
+        import re
+        # Regex to split by ANSI codes: \033[XXm
+        # Captures the code in group
+        parts = re.split(r'(\033\[\d+m)', text)
+        
+        current_tag = "reset"
+        
+        # Mapping ANSI codes to tags
+        ansi_map = {
+            '\033[91m': 'red',
+            '\033[92m': 'green',
+            '\033[93m': 'yellow',
+            '\033[96m': 'cyan',
+            '\033[90m': 'grey',
+            '\033[0m': 'reset'
+        }
+        
+        for part in parts:
+            if part in ansi_map:
+                current_tag = ansi_map[part]
+            else:
+                if part: # Ignore empty strings
+                    try:
+                        self.log_textbox.insert("end", part, current_tag)
+                        # Autoscroll
+                        self.log_textbox.see("end")
+                    except:
+                        # Fallback if tags fail
+                        self.log_textbox.insert("end", part)
+
     def update_logs(self):
         while not self.log_queue.empty():
             line = self.log_queue.get()
-            self.log_textbox.insert("end", line)
-            self.log_textbox.see("end")
+            self.append_ansi_text(line)
         self.after(100, self.update_logs)
 
     def open_web_dashboard(self):

@@ -17,6 +17,7 @@ def load_config():
 def setup_logging():
     import shutil
     import datetime
+    import re
     
     # Rotate logs
     log_file_0 = "session.0.log"
@@ -28,40 +29,73 @@ def setup_logging():
     if os.path.exists(log_file_0):
         shutil.move(log_file_0, log_file_1)
         
-    # Redirect stdout/stderr
     class Logger(object):
-        def __init__(self):
-            self.terminal = sys.stdout
-            self.log = open(log_file_0, "w", encoding='utf-8')
+        def __init__(self, stream, is_stderr=False):
+            self.terminal = stream
+            self.log = open(log_file_0, "a", encoding='utf-8')
+            self.is_stderr = is_stderr
+            self.newline = True
+            
+            # ANSI Colors
+            self.C_RED = '\033[91m'
+            self.C_GREEN = '\033[92m'
+            self.C_YELLOW = '\033[93m'
+            self.C_CYAN = '\033[96m'
+            self.C_GREY = '\033[90m'
+            self.C_RESET = '\033[0m'
 
         def write(self, message):
-            self.terminal.write(message)
+            if not message: return
+            
+            # Timestamp
+            ts = datetime.datetime.now().strftime(f"{self.C_GREY}[%H:%M:%S]{self.C_RESET} ")
+            ts_plain = datetime.datetime.now().strftime("[%H:%M:%S] ")
+            
+            # FILE WRITE (Plain)
+            if self.newline:
+                self.log.write(ts_plain)
             self.log.write(message)
             self.log.flush()
+            
+            # TERMINAL WRITE (Colored)
+            output = message
+            
+            # Colorize based on content if not stderr
+            if self.is_stderr:
+                output = f"{self.C_RED}{output}{self.C_RESET}"
+            else:
+                # Simple keyword highlighting
+                if "[Error]" in output or "Error:" in output or "Exception" in output:
+                    output = output.replace("[Error]", f"{self.C_RED}[Error]{self.C_RESET}")
+                    output = output.replace("Error:", f"{self.C_RED}Error:{self.C_RESET}")
+                elif "[Debug]" in output:
+                    output = output.replace("[Debug]", f"{self.C_CYAN}[Debug]{self.C_RESET}")
+                elif "[Action]" in output:
+                    output = output.replace("[Action]", f"{self.C_GREEN}[Action]{self.C_RESET}")
+                elif "[System]" in output:
+                    output = output.replace("[System]", f"{self.C_YELLOW}[System]{self.C_RESET}")
+
+            if self.newline:
+                self.terminal.write(ts)
+                
+            self.terminal.write(output)
+            self.terminal.flush()
+            
+            # Update state
+            self.newline = message.endswith('\n')
 
         def flush(self):
             self.terminal.flush()
             self.log.flush()
 
-    sys.stdout = Logger()
-    # Also redirect stderr
-    class LoggerErr(object):
-         def __init__(self):
-            self.terminal = sys.stderr
-            self.log = open(log_file_0, "a", encoding='utf-8') # Append to same log
-
-         def write(self, message):
-            self.terminal.write(message)
-            self.log.write(message)
-            self.log.flush()
-            
-         def flush(self):
-            self.terminal.flush()
-            self.log.flush()
-            
-    sys.stderr = LoggerErr()
+    # Apply Loggers
+    # Clear file first
+    with open(log_file_0, 'w') as f: f.write("")
     
-    print(f"=== OpenStreamBot Session Started: {datetime.datetime.now()} ===")
+    sys.stdout = Logger(sys.stdout, is_stderr=False)
+    sys.stderr = Logger(sys.stderr, is_stderr=True)
+    
+    print(f"[System] OpenStreamBot Session Started: {datetime.datetime.now()}")
 
 async def main():
     setup_logging()
