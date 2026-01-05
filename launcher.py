@@ -38,8 +38,8 @@ class App(ctk.CTk):
         super().__init__()
 
         self.title("OpenStreamBot Launcher")
-        self.geometry("800x600")
-        self.minsize(800, 600)
+        self.geometry("1280x720")
+        self.minsize(1280, 720)
 
         self.bot_process = None
         self.log_queue = queue.Queue()
@@ -210,6 +210,20 @@ class App(ctk.CTk):
 
         self.btn_yt_logout = ctk.CTkButton(self.yt_frame, text="Logout", command=self.logout_youtube, fg_color="red", hover_color="darkred")
         self.btn_yt_logout.grid(row=0, column=3, padx=10, pady=10)
+        
+        # Sync Button
+        self.btn_yt_sync = ctk.CTkButton(self.yt_frame, text="Sync Shorts", command=self.sync_shorts, fg_color="#F59E0B", hover_color="#D97706")
+        self.btn_yt_sync.grid(row=0, column=4, padx=10, pady=10)
+        
+        # Overlay URL Info
+        ctk.CTkLabel(self.yt_frame, text="Overlay URL:").grid(row=1, column=0, padx=10, pady=5, sticky="e")
+        self.ent_overlay_url = ctk.CTkEntry(self.yt_frame, width=300)
+        self.ent_overlay_url.insert(0, "http://localhost:8000/interface/yt_overlay.html")
+        self.ent_overlay_url.configure(state="readonly")
+        self.ent_overlay_url.grid(row=1, column=1, columnspan=3, padx=10, pady=5, sticky="ew")
+        
+        ctk.CTkButton(self.yt_frame, text="Copy", width=60, command=self.copy_overlay_url).grid(row=1, column=4, padx=10, pady=5)
+
 
         self.update_account_status()
 
@@ -233,6 +247,19 @@ class App(ctk.CTk):
             self.yt_status.configure(text="Not Connected", text_color="red")
             self.btn_yt_login.configure(state="normal")
             self.btn_yt_logout.configure(state="disabled")
+
+    def sync_shorts(self):
+        try:
+             with open(".yt_sync_trigger", "w") as f:
+                 f.write("sync")
+             messagebox.showinfo("Sync Started", "Shorts sync requested!\nCheck the 'Dashboard' console for progress.")
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+    def copy_overlay_url(self):
+        self.clipboard_clear()
+        self.clipboard_append(self.ent_overlay_url.get())
+        messagebox.showinfo("Copied", "Overlay URL copied to clipboard!")
 
     def login_twitch(self):
         # Async Logic im Launcher Thread ist doof -> Sub Thread der asyncio run macht

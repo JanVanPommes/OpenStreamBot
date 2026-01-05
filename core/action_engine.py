@@ -22,7 +22,17 @@ class ActionEngine:
         self.timer_tasks = []
         self.playlist_task = None
         self.current_audio_device = None # Tracks current mixer device
+        self.current_playlist_sound = None # Tracks currently playing Sound object
         
+        # Volume Control (0.0 - 1.0)
+        self.vol_sfx = 1.0
+        self.vol_playlist = 1.0
+        self.pre_duck_volume = None # For Auto-Ducking
+        
+        # Register Handlers
+        if self.event_server:
+            self.event_server.add_message_handler(self.on_ws_message)
+
         self.load_actions()
 
     def load_actions(self):
@@ -86,6 +96,30 @@ class ActionEngine:
                     # Execute async
                     asyncio.create_task(self.execute_action(action, data))
                     break # One trigger per action is enough
+
+    async def on_ws_message(self, message):
+        """Handle incoming WebSocket messages from Overlay"""
+        try:
+            import json
+            data = json.loads(message)
+            event = data.get("event")
+            
+            if event == "YouTubeEnded":
+                print("[ActionEngine] Shorts ended. Restoring volume.")
+                await self.restore_ducking()
+                
+        except Exception as e:
+            print(f"[ActionEngine] WS Message Error: {e}")
+
+    async def restore_ducking(self):
+        if self.pre_duck_volume is not None:
+            print(f"[AutoDuck] Restoring playlist volume to {self.pre_duck_volume*100:.0f}%")
+            self.vol_playlist = self.pre_duck_volume
+            self.pre_duck_volume = None
+            
+            if self.current_playlist_sound:
+                try: self.current_playlist_sound.set_volume(self.vol_playlist)
+                except: pass
 
     def check_trigger(self, trigger_config, event_type, data):
         # MAPPING: EventServer events -> Action triggers
@@ -171,10 +205,13 @@ class ActionEngine:
         elif sa_type == "play_sound":
             file_path = self.replace_vars(config.get('file', ''), ctx)
             device = config.get('device', None)
+            base_vol = float(config.get('volume', 100)) / 100.0 # 0-100 logic
+            
+            final_vol = self.vol_sfx * base_vol
             
             if os.path.exists(file_path):
                  # Run in thread to not block loop
-                 await asyncio.to_thread(self.play_sound_sync, file_path, device)
+                 await asyncio.to_thread(self.play_sound_sync, file_path, device, final_vol)
             else:
                 print(f"[ActionError] Sound file not found: {file_path}")
 
@@ -186,6 +223,13 @@ class ActionEngine:
         elif sa_type == "playlist":
             folder = self.replace_vars(config.get('folder', ''), ctx)
             device = config.get('device', None)
+            
+            # Update volume if provided in config
+            if 'volume' in config:
+                try:
+                    self.vol_playlist = float(config['volume']) / 100.0
+                    print(f"[Playlist] Initial volume set to {self.vol_playlist:.2f}")
+                except: pass
             
             if self.playlist_task:
                 self.playlist_task.cancel()
@@ -201,6 +245,73 @@ class ActionEngine:
                 # Stop current playback with fadeout
                 if sa.get_init():
                     sa.fadeout(1500)
+
+        # --- YOUTUBE SHORTS ---
+        elif sa_type == "youtube_random_short":
+             if self.youtube:
+                 vid_id = self.youtube.get_random_short()
+                 print(f"[Debug] YT Short ID retrieved: {vid_id} (Type: {type(vid_id)})")
+                 if vid_id:
+                     print(f"[Action] Playing Short: {vid_id}")
+                     
+                     # Auto-Duck Playlist
+                     if self.vol_playlist > 0.05:
+                         self.pre_duck_volume = self.vol_playlist
+                         print(f"[AutoDuck] Ducking playlist to 5% (was {self.pre_duck_volume*100:.0f}%)")
+                         self.vol_playlist = 0.05
+                         if self.current_playlist_sound:
+                             try: self.current_playlist_sound.set_volume(self.vol_playlist)
+                             except: pass
+
+                     # Broadcast to Overlay
+                     print(f"[Debug] Broadcasting YouTubePlay event for {vid_id}")
+                     await self.event_server.broadcast("YouTubePlay", {"videoId": vid_id})
+                 else:
+                     print("[Action] No Short found or cache empty.")
+             else:
+                 print("[Action] YouTube Bot not loaded.")
+
+
+        # --- TRIGGER ACTION ---
+        elif sa_type == "trigger_action":
+            # ... (unchanged) ...
+            target_name = config.get('action_name', '')
+            found = next((a for a in self.actions if a.get('name') == target_name), None)
+            if found:
+                 asyncio.create_task(self.execute_action(found, ctx))
+            else:
+                 print(f"[Action] Trigger target '{target_name}' not found.")
+
+        # --- VOLUME CONTROL ---
+        elif sa_type == "set_volume":
+            target = config.get('target', 'sfx') # sfx or playlist
+            mode = config.get('mode', 'set') # set or adjust
+            val = float(config.get('value', 0.5))
+            
+            print(f"[Debug] set_volume triggered: target={target}, mode={mode}, val={val}")
+
+            # Logic helper
+            def calc_new_vol(current, m, v):
+                if m == 'set': return max(0.0, min(1.0, v))
+                else: return max(0.0, min(1.0, current + v))
+
+            if target == 'sfx':
+                old = self.vol_sfx
+                self.vol_sfx = calc_new_vol(self.vol_sfx, mode, val)
+                print(f"[Volume] SFX changed {old:.2f} -> {self.vol_sfx:.2f}")
+            elif target == 'playlist':
+                old = self.vol_playlist
+                self.vol_playlist = calc_new_vol(self.vol_playlist, mode, val)
+                print(f"[Volume] Playlist changed {old:.2f} -> {self.vol_playlist:.2f}")
+                
+                # Apply immediately if playing
+                if self.current_playlist_sound:
+                    try:
+                        self.current_playlist_sound.set_volume(self.vol_playlist)
+                        print(f"[Volume] Applied to current track.")
+                    except:
+                        pass
+
 
     async def run_playlist(self, folder, device=None):
         print(f"[Playlist] Starting playlist from {folder} on {device or 'Default'}")
@@ -221,7 +332,8 @@ class ActionEngine:
                 full_path = os.path.join(folder, choice)
                 
                 # Play & Get Duration
-                duration = await asyncio.to_thread(self.play_sound_get_duration, full_path, device)
+                # For playlist, we assume 100% base volume, scaled by global playlist volume
+                duration = await asyncio.to_thread(self.play_sound_get_duration, full_path, device, self.vol_playlist)
                 
                 # Wait
                 await asyncio.sleep(duration)
@@ -231,11 +343,16 @@ class ActionEngine:
         except Exception as e:
             print(f"[Playlist] Error: {e}")
 
-    def play_sound_get_duration(self, path, device=None):
+    def play_sound_get_duration(self, path, device=None, volume=1.0):
         try:
             self._ensure_audio_device(device)
             snd = sa.Sound(path)
+            snd.set_volume(volume)
             snd.play()
+            
+            # Store reference for volume control
+            self.current_playlist_sound = snd
+            
             return snd.get_length()
         except:
             return 0
@@ -267,12 +384,14 @@ class ActionEngine:
             text = text.replace(f"%{k}%", str(v))
         return text
 
-    def play_sound_sync(self, path, device=None):
+    def play_sound_sync(self, path, device=None, volume=1.0):
         try:
+            print(f"[Debug] play_sound_sync: {os.path.basename(path)} @ {volume:.2f}")
             self._ensure_audio_device(device)
             
             # Use Sound object for SFX (allows overlapping sounds)
             sound = sa.Sound(path)
+            sound.set_volume(volume)
             sound.play()
             
             # We don't block here anymore because Sound.play is fire-and-forget

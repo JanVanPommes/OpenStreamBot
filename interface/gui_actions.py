@@ -164,7 +164,8 @@ class ActionEditorFrame(ctk.CTkFrame):
         if not self.current_action: return
         
         # Triggers
-        for t in self.current_action.get('triggers', []):
+        triggers = self.current_action.get('triggers', [])
+        for i, t in enumerate(triggers):
             f = ctk.CTkFrame(self.scroll_triggers)
             f.pack(fill="x", pady=2)
             text = f"{t['type']}"
@@ -175,15 +176,29 @@ class ActionEditorFrame(ctk.CTkFrame):
             
             lbl = ctk.CTkLabel(f, text=text)
             lbl.pack(side="left", padx=5)
-            # Edit btn
-            btn_edit = ctk.CTkButton(f, text="E", width=20, command=lambda x=t: self.edit_trigger(x))
-            btn_edit.pack(side="right", padx=2)
+            
+            # Controls (Right side)
             # Del btn
-            btn = ctk.CTkButton(f, text="X", width=20, fg_color="red", command=lambda x=t: self.remove_trigger(x))
-            btn.pack(side="right", padx=2)
+            ctk.CTkButton(f, text="X", width=20, fg_color="red", command=lambda x=t: self.remove_trigger(x)).pack(side="right", padx=2)
+            # Edit btn
+            ctk.CTkButton(f, text="E", width=20, command=lambda x=t: self.edit_trigger(x)).pack(side="right", padx=2)
+            
+            # Move Down
+            if i < len(triggers) - 1:
+                ctk.CTkButton(f, text="↓", width=20, command=lambda x=i: self.move_trigger_down(x)).pack(side="right", padx=1)
+            else:
+                 ctk.CTkLabel(f, text=" ", width=20).pack(side="right", padx=1) # Spacer
+                 
+            # Move Up
+            if i > 0:
+                ctk.CTkButton(f, text="↑", width=20, command=lambda x=i: self.move_trigger_up(x)).pack(side="right", padx=1)
+            else:
+                 ctk.CTkLabel(f, text=" ", width=20).pack(side="right", padx=1) # Spacer
+
 
         # Sub Actions
-        for s in self.current_action.get('sub_actions', []):
+        sub_actions = self.current_action.get('sub_actions', [])
+        for i, s in enumerate(sub_actions):
             f = ctk.CTkFrame(self.scroll_subs)
             f.pack(fill="x", pady=2)
             
@@ -191,15 +206,25 @@ class ActionEditorFrame(ctk.CTkFrame):
             if 'message' in s: summary += f": {s['message'][:20]}..."
             elif 'ms' in s: summary += f": {s['ms']}ms"
             elif 'folder' in s: summary += f": {s['folder']}"
+            elif 'file' in s: summary += f": {os.path.basename(s['file'])}"
+            elif 'action_name' in s: summary += f": -> {s['action_name']}"
             
             lbl = ctk.CTkLabel(f, text=summary)
             lbl.pack(side="left", padx=5)
             
-            btn_edit = ctk.CTkButton(f, text="E", width=20, command=lambda x=s: self.edit_sub_action(x))
-            btn_edit.pack(side="right", padx=2)
+            # Controls
+            ctk.CTkButton(f, text="X", width=20, fg_color="red", command=lambda x=s: self.remove_sub(x)).pack(side="right", padx=2)
+            ctk.CTkButton(f, text="E", width=20, command=lambda x=s: self.edit_sub_action(x)).pack(side="right", padx=2)
 
-            btn = ctk.CTkButton(f, text="X", width=20, fg_color="red", command=lambda x=s: self.remove_sub(x))
-            btn.pack(side="right", padx=2)
+            if i < len(sub_actions) - 1:
+                ctk.CTkButton(f, text="↓", width=20, command=lambda x=i: self.move_subaction_down(x)).pack(side="right", padx=1)
+            else:
+                 ctk.CTkLabel(f, text=" ", width=20).pack(side="right", padx=1)
+
+            if i > 0:
+                ctk.CTkButton(f, text="↑", width=20, command=lambda x=i: self.move_subaction_up(x)).pack(side="right", padx=1)
+            else:
+                 ctk.CTkLabel(f, text=" ", width=20).pack(side="right", padx=1)
 
     def remove_trigger(self, item):
         self.current_action['triggers'].remove(item)
@@ -248,6 +273,26 @@ class ActionEditorFrame(ctk.CTkFrame):
             sub_data.update(dialog.result)
             self.refresh_details()
 
+    def move_trigger_up(self, index):
+        if index > 0:
+            self.current_action['triggers'].insert(index-1, self.current_action['triggers'].pop(index))
+            self.refresh_details()
+
+    def move_trigger_down(self, index):
+        if index < len(self.current_action['triggers']) - 1:
+            self.current_action['triggers'].insert(index+1, self.current_action['triggers'].pop(index))
+            self.refresh_details()
+
+    def move_subaction_up(self, index):
+        if index > 0:
+            self.current_action['sub_actions'].insert(index-1, self.current_action['sub_actions'].pop(index))
+            self.refresh_details()
+
+    def move_subaction_down(self, index):
+         if index < len(self.current_action['sub_actions']) - 1:
+            self.current_action['sub_actions'].insert(index+1, self.current_action['sub_actions'].pop(index))
+            self.refresh_details()
+
 class SubActionDialog(ctk.CTkToplevel):
     def __init__(self, parent, initial_data=None):
         super().__init__(parent)
@@ -262,8 +307,12 @@ class SubActionDialog(ctk.CTkToplevel):
         start_type = self.initial_data.get('type', "twitch_chat")
         
         self.type_var = ctk.StringVar(value=start_type)
+        
+        # Sort and unique
+        sub_types = sorted(list(set(["twitch_chat", "delay", "log", "play_sound", "stop_sounds", "playlist", "stop_playlist", "obs_set_scene", "youtube_random_short", "trigger_action", "set_volume"])))
+        
         self.combo = ctk.CTkComboBox(self, variable=self.type_var, 
-                                     values=["twitch_chat", "delay", "log", "play_sound", "stop_sounds", "playlist", "stop_playlist", "obs_set_scene"],
+                                     values=sub_types,
                                      command=self.on_type_change)
         self.combo.pack(pady=5)
         
@@ -341,6 +390,21 @@ class SubActionDialog(ctk.CTkToplevel):
             btn.pack(side="right", padx=5)
             
             add_device_selector()
+            
+            ctk.CTkLabel(self.frame_config, text="Volume (0-100%):").pack(anchor="w", pady=(10,0))
+            
+            def update_vol_lbl(val):
+                lbl_vol.configure(text=f"{int(val)}%")
+                
+            init_vol = float(get_val('volume', '100'))
+            
+            slider = ctk.CTkSlider(self.frame_config, from_=0, to=100, number_of_steps=100, command=update_vol_lbl)
+            slider.set(init_vol)
+            slider.pack(fill="x", pady=5)
+            self.widgets['volume_slider'] = slider
+            
+            lbl_vol = ctk.CTkLabel(self.frame_config, text=f"{int(init_vol)}%")
+            lbl_vol.pack(anchor="n")
 
         elif choice == "playlist":
             ctk.CTkLabel(self.frame_config, text="Music Folder:").pack(anchor="w")
@@ -356,6 +420,22 @@ class SubActionDialog(ctk.CTkToplevel):
             btn.pack(side="right", padx=5)
             
             add_device_selector()
+            
+            # Volume Slider for Playlist
+            ctk.CTkLabel(self.frame_config, text="Volume (0-100%):").pack(anchor="w", pady=(10,0))
+            
+            def update_vol_lbl(val):
+                lbl_vol.configure(text=f"{int(val)}%")
+                
+            init_vol = float(get_val('volume', '100'))
+            
+            slider = ctk.CTkSlider(self.frame_config, from_=0, to=100, number_of_steps=100, command=update_vol_lbl)
+            slider.set(init_vol)
+            slider.pack(fill="x", pady=5)
+            self.widgets['volume_slider'] = slider
+            
+            lbl_vol = ctk.CTkLabel(self.frame_config, text=f"{int(init_vol)}%")
+            lbl_vol.pack(anchor="n")
 
         elif choice == "obs_set_scene":
             ctk.CTkLabel(self.frame_config, text="Scene Name:").pack(anchor="w")
@@ -363,6 +443,48 @@ class SubActionDialog(ctk.CTkToplevel):
             entry.insert(0, get_val('scene'))
             entry.pack(fill="x", pady=5)
             self.widgets['scene'] = entry
+            
+        elif choice == "youtube_random_short":
+             ctk.CTkLabel(self.frame_config, text="No configuration needed.\nMake sure to 'Sync Shorts' in 'Accounts' tab!").pack(pady=10)
+
+        elif choice == "trigger_action":
+            ctk.CTkLabel(self.frame_config, text="Action Name to Trigger:").pack(anchor="w")
+            entry = ctk.CTkEntry(self.frame_config)
+            entry.insert(0, get_val('action_name'))
+            entry.pack(fill="x", pady=5)
+            self.widgets['action_name'] = entry
+
+        elif choice == "set_volume":
+            # Target
+            ctk.CTkLabel(self.frame_config, text="Target:").pack(anchor="w")
+            t_var = ctk.StringVar(value=get_val('target', 'sfx'))
+            ctk.CTkComboBox(self.frame_config, variable=t_var, values=['sfx', 'playlist']).pack(fill="x", pady=5)
+            self.widgets['target'] = t_var
+            
+            # Mode
+            ctk.CTkLabel(self.frame_config, text="Mode:").pack(anchor="w")
+            m_var = ctk.StringVar(value=get_val('mode', 'set'))
+            ctk.CTkComboBox(self.frame_config, variable=m_var, values=['set', 'adjust']).pack(fill="x", pady=5)
+            self.widgets['mode'] = m_var
+            
+            # Value
+            ctk.CTkLabel(self.frame_config, text="Value (0-100%):").pack(anchor="w")
+            
+            # Slider Logic
+            def update_val_lbl(val):
+                lbl_val.configure(text=f"{int(val)}%")
+                
+            init_val = float(get_val('value', '0.5'))
+            # Check if stored as 0-1 or 0-100
+            if init_val <= 1.0: init_val *= 100
+            
+            slider = ctk.CTkSlider(self.frame_config, from_=0, to=100, number_of_steps=100, command=update_val_lbl)
+            slider.set(init_val)
+            slider.pack(fill="x", pady=5)
+            self.widgets['value_slider'] = slider # Special key
+            
+            lbl_val = ctk.CTkLabel(self.frame_config, text=f"{int(init_val)}%")
+            lbl_val.pack(anchor="n")
 
     def browse_folder(self, entry_widget):
         folder = filedialog.askdirectory()
@@ -394,6 +516,26 @@ class SubActionDialog(ctk.CTkToplevel):
                 res['device'] = self.widgets['device'].get()
             if 'scene' in self.widgets:
                 res['scene'] = self.widgets['scene'].get()
+            if 'action_name' in self.widgets:
+                res['action_name'] = self.widgets['action_name'].get()
+            if 'target' in self.widgets:
+                res['target'] = self.widgets['target'].get()
+            if 'mode' in self.widgets:
+                res['mode'] = self.widgets['mode'].get()
+                
+            if 'value_slider' in self.widgets:
+                # Convert 0-100 slider to 0.0-1.0 for backend
+                val = self.widgets['value_slider'].get()
+                res['value'] = f"{val/100:.2f}"
+            elif 'value' in self.widgets: # Fallback if widget name mismatch
+                res['value'] = self.widgets['value'].get()
+                
+            if 'volume_slider' in self.widgets:
+                # Keep 0-100 for play_sound config
+                res['volume'] = str(int(self.widgets['volume_slider'].get()))
+            elif 'volume' in self.widgets:
+                res['volume'] = self.widgets['volume'].get()
+                
         except ValueError:
             messagebox.showerror("Error", "Invalid numeric value!")
             return
@@ -417,8 +559,6 @@ class TriggerDialog(ctk.CTkToplevel):
         
         # Create friendly display names mapping
         trigger_types = [
-            ("twitch_command", "Twitch: Chat-Befehl (!command)"),
-            ("twitch_raid", "Twitch: Raid empfangen"),
             ("twitch_command", "Twitch: Chat-Befehl (!command)"),
             ("twitch_raid", "Twitch: Raid empfangen"),
             ("twitch_sub", "Twitch: Neuer Subscriber"),

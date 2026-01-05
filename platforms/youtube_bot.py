@@ -6,6 +6,8 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 import datetime
+import re
+import random
 
 # Scopes für YouTube Chat
 SCOPES = ['https://www.googleapis.com/auth/youtube.readonly', 'https://www.googleapis.com/auth/youtube.force-ssl']
@@ -252,3 +254,117 @@ class YouTubeBot:
             print(f"[YouTube -> Chat] {message_text}")
         except Exception as e:
             print(f"[YouTube] Fehler beim Senden: {e}")
+
+    # --- SHORTS CACHING ---
+    
+    async def sync_shorts_cache(self):
+        """Builds a local cache of videos <= 60s."""
+        print("[YouTube] Starting Shorts Sync (this may take a moment)...")
+        cache_file = "shorts_cache.json"
+        shorts_ids = []
+        
+        try:
+            # Ensure we are authenticated (lazy auth)
+            if not self.youtube:
+                print("[YouTube] Not authenticated. Attempting login for sync...")
+                if not await self.authenticate():
+                    print("[YouTube] Sync aborted: Login failed.")
+                    return 0
+
+            # 1. Get Uploads Playlist ID
+            req = self.youtube.channels().list(mine=True, part='contentDetails')
+            resp = await asyncio.to_thread(req.execute)
+            uploads_playlist_id = resp['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+            
+            # 2. Iterate Playlist
+            next_token = None
+            video_ids_buffer = []
+            
+            # Limit to last 1000 videos to protect quota in extreme cases, though specific logic handles wait
+            fetched_count = 0
+            
+            while True:
+                pl_req = self.youtube.playlistItems().list(
+                    playlistId=uploads_playlist_id,
+                    part='contentDetails',
+                    maxResults=50,
+                    pageToken=next_token
+                )
+                pl_resp = await asyncio.to_thread(pl_req.execute)
+                
+                # Collect IDs
+                for item in pl_resp.get('items', []):
+                    vid = item['contentDetails']['videoId']
+                    video_ids_buffer.append(vid)
+                    
+                fetched_count += len(pl_resp.get('items', []))
+                
+                # Process buffer if >= 50 or no more pages
+                next_token = pl_resp.get('nextPageToken')
+                
+                if len(video_ids_buffer) >= 50 or not next_token:
+                    # Flush Buffer: Get Durations
+                    # Join up to 50
+                    batch = video_ids_buffer[:50]
+                    video_ids_buffer = video_ids_buffer[50:] # keep rest
+                    
+                    if batch:
+                        vid_req = self.youtube.videos().list(
+                            id=','.join(batch),
+                            part='contentDetails'
+                        )
+                        vid_resp = await asyncio.to_thread(vid_req.execute)
+                        
+                        for vid_item in vid_resp.get('items', []):
+                            duration_str = vid_item['contentDetails']['duration']
+                            if self._is_short(duration_str) and vid_item['id'] not in shorts_ids:
+                                shorts_ids.append(vid_item['id'])
+                
+                print(f"[YouTube] Stats: Checked {fetched_count} videos, found {len(shorts_ids)} Shorts so far...")
+                
+                if not next_token: # or fetched_count >= 1000: # Removed limit for now as per user request (wants full scan logic)
+                    break
+            
+            # Save to file
+            with open(cache_file, 'w') as f:
+                json.dump(shorts_ids, f)
+            print(f"[YouTube] Cache update done! Saved {len(shorts_ids)} videos to {cache_file}.")
+            return len(shorts_ids)
+            
+        except Exception as e:
+            print(f"[YouTube] Sync Error: {e}")
+            return 0
+
+    def get_random_short(self):
+        """Returns a random cached video ID. Triggers sync if empty."""
+        cache_file = "shorts_cache.json"
+        
+        if not os.path.exists(cache_file):
+             print("[YouTube] Cache empty, please sync first! (Returning None)")
+             return None
+             
+        try:
+            with open(cache_file, 'r') as f:
+                ids = json.load(f)
+            
+            if not ids: return None
+            return random.choice(ids)
+            
+        except:
+            return None
+            
+    def _is_short(self, duration_iso):
+        """Parses PT#M#S to seconds. Returns True if <= 60s."""
+        # Simple Regex for PT1M30S style
+        # Format is usually PT#M#S or PT#S. Hours are unlikely for Shorts triggers but possible for parser.
+        
+        # Extract matches
+        match = re.match(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', duration_iso)
+        if not match: return False # Unknown format
+        
+        h = int(match.group(1) or 0)
+        m = int(match.group(2) or 0)
+        s = int(match.group(3) or 0)
+        
+        total_seconds = h*3600 + m*60 + s
+        return 0 < total_seconds <= 61 # 61 just to be safe with rounding

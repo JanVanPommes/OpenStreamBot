@@ -14,7 +14,57 @@ def load_config():
         print("FEHLER: config.yaml nicht gefunden! Bitte erstellen.")
         sys.exit(1)
 
+def setup_logging():
+    import shutil
+    import datetime
+    
+    # Rotate logs
+    log_file_0 = "session.0.log"
+    log_file_1 = "session.1.log"
+    log_file_2 = "session.2.log"
+    
+    if os.path.exists(log_file_1):
+        shutil.move(log_file_1, log_file_2)
+    if os.path.exists(log_file_0):
+        shutil.move(log_file_0, log_file_1)
+        
+    # Redirect stdout/stderr
+    class Logger(object):
+        def __init__(self):
+            self.terminal = sys.stdout
+            self.log = open(log_file_0, "w", encoding='utf-8')
+
+        def write(self, message):
+            self.terminal.write(message)
+            self.log.write(message)
+            self.log.flush()
+
+        def flush(self):
+            self.terminal.flush()
+            self.log.flush()
+
+    sys.stdout = Logger()
+    # Also redirect stderr
+    class LoggerErr(object):
+         def __init__(self):
+            self.terminal = sys.stderr
+            self.log = open(log_file_0, "a", encoding='utf-8') # Append to same log
+
+         def write(self, message):
+            self.terminal.write(message)
+            self.log.write(message)
+            self.log.flush()
+            
+         def flush(self):
+            self.terminal.flush()
+            self.log.flush()
+            
+    sys.stderr = LoggerErr()
+    
+    print(f"=== OpenStreamBot Session Started: {datetime.datetime.now()} ===")
+
 async def main():
+    setup_logging()
     cfg = load_config()
     
     # 1. Event Server initialisieren
@@ -99,6 +149,15 @@ async def main():
                                 pass
                             yt_task = None
                     
+                    # Check for Sync Trigger
+                    if os.path.exists(".yt_sync_trigger"):
+                        try:
+                            print("[YouTube] Found sync trigger. Starting cache sync...")
+                            os.remove(".yt_sync_trigger")
+                            asyncio.create_task(yt_bot.sync_shorts_cache())
+                        except Exception as e:
+                           print(f"[YouTube] Sync trigger error: {e}")
+
                     await asyncio.sleep(1) # Check every second
                 except Exception as e:
                     print(f"[YouTube Control] Error: {e}")

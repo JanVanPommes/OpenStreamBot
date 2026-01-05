@@ -24,5 +24,48 @@ actions:
   - message: Hier gibts alle infos zum OpenStreamBot :) https://github.com/JanVanPommes/OpenStreamBot
     type: twitch_chat
   triggers:
-  - command: '!openstreambot'
+  - command: '!bot'
     type: twitch_command
+- enabled: true
+  group: Automation
+  name: Music Pause
+  sub_actions:
+  - device: Navi 21/23 HDMI/DP Audio Controller Digitales Stereo (HDMI)
+    folder: /mnt/C65E9C4D5E9C37DF/Musik Artlist
+    type: playlist
+    volume: '50'
+  - action_name: testshort
+    type: trigger_action
+  triggers:
+  - scene_name: Pause
+    type: obs_scene
+- enabled: true
+  group: Automation
+  name: Music Stop
+  sub_actions:
+  - type: stop_playlist
+  triggers:
+  - scene_name: In-Game
+    type: obs_scene
+- enabled: true
+  group: test
+  name: testshort
+  sub_actions:
+  - ms: 50000
+    type: delay
+  - type: youtube_random_short
+  - ms: 100000
+    type: delay
+  - type: youtube_random_short
+  triggers: []
+- enabled: true
+  group: Automation
+  name: Musik Start
+  sub_actions:
+  - device: Navi 21/23 HDMI/DP Audio Controller Digitales Stereo (HDMI)
+    folder: /mnt/C65E9C4D5E9C37DF/Musik Artlist
+    type: playlist
+    volume: '50'
+  triggers:
+  - scene_name: Stream Starting
+    type: obs_scene

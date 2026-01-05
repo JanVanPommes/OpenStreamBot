@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.2 Alpha] - 2026-01-05
+
+### Added
+- **YouTube Shorts**: Play random Shorts from a channel with a dedicated browser overlay (`youtube_random_short`).
+- **Volume Control**: Sliders (0-100%) for Global Volume (`set_volume`) and Per-Action Volume (`play_sound`, `playlist`).
+- **Auto-Ducking**: Playlist volume automatically drops to 5% when a YouTube Short plays and restores afterwards.
+- **Action Chaining**: New `trigger_action` sub-action allows actions to trigger other actions by name.
+- **Action Reordering**: Triggers and Sub-Actions can now be reordered in the GUI using Up/Down arrows.
+- **Session Logging**: Logs are now saved to files (`session.0.log`, etc.) with 3-session rotation.
+- **Overlay Improvements**: YouTube Overlay now shows a black screen when inactive.
+
+### Fixed
+- **Overlay Connectivity**: Fixed WebSocket port mismatch preventing the overlay from connecting.
+- **UI Duplicates**: Removed duplicate entries in the Action Type selectors.
+- **Playback**: Fixed issues where YouTube Shorts would not report their "Ended" state correctly.
+
 ## [0.1.1 Alpha] - 2026-01-04
 
 ### Added
