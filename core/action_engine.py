@@ -91,10 +91,17 @@ class ActionEngine:
                 
             triggers = action.get('triggers', [])
             for trigger in triggers:
-                if self.check_trigger(trigger, event_type, data):
+                is_triggered, ctx_updates = self.check_trigger(trigger, event_type, data)
+                if is_triggered:
                     print(f"[ActionEngine] Trigger fired: {action['name']} (Event: {event_type})")
+                    
+                    # Merge context
+                    full_ctx = data.copy() if data else {}
+                    if ctx_updates:
+                        full_ctx.update(ctx_updates)
+
                     # Execute async
-                    asyncio.create_task(self.execute_action(action, data))
+                    asyncio.create_task(self.execute_action(action, full_ctx))
                     break # One trigger per action is enough
 
     async def on_ws_message(self, message):
@@ -133,27 +140,69 @@ class ActionEngine:
         
         # Check Type
         if trigger_config.get('type') != mapped_type:
-            return False
+            return False, {}
             
         # Condition Check
         if mapped_type == "twitch_command": # Use mapped_type instead of event_type
-            cmd = trigger_config.get('command', '').lower()
-            if cmd and cmd != data.get('command', '').lower():
-                return False
+            trigger_cmd = trigger_config.get('command', '').lower()
+            received_cmd = data.get('command', '').lower()
+            
+            # 1. Simple Match
+            if trigger_cmd == received_cmd:
+                return True, {}
+            
+            # 2. Parameter Match (e.g. "!shout %user%")
+            if "%" in trigger_cmd:
+                t_parts = trigger_cmd.split(' ')
+                base_cmd = t_parts[0]
+                
+                # Compare base command (e.g. "!shout")
+                if base_cmd == received_cmd:
+                    received_msg = data.get('message', '')
+                    msg_parts = [p for p in received_msg.split(' ') if p] # Remove empty
+                    
+                    # Check length (Trigger usually has fewer or equal parts if we handle variable args strict? 
+                    # Let's say we map 1:1 for now)
+                    
+                    extracted = {}
+                    match = True
+                    
+                    for i, t_part in enumerate(t_parts):
+                        if i >= len(msg_parts):
+                            match = False # Message too short
+                            break
+                        
+                        if t_part.startswith('%') and t_part.endswith('%'):
+                             var_name = t_part[1:-1] # e.g. "user"
+                             val = msg_parts[i]
+                             
+                             # Cleanup @user -> user
+                             if var_name == "user" and val.startswith('@'):
+                                 val = val[1:]
+                                 
+                             extracted[var_name] = val
+                        elif t_part != msg_parts[i].lower():
+                             match = False
+                             break
+                    
+                    if match:
+                        return True, extracted
+
+            return False, {}
                 
         # 2. Twitch Raid (Min Viewers)
         elif event_type == "twitch_raid":
             min_v = trigger_config.get('min_viewers', 0)
             if data.get('viewers', 0) < min_v:
-                return False
+                return False, {}
                 
         # 3. OBS Scene Changed
         elif event_type == "obs_scene":
             scene = trigger_config.get('scene_name', '')
             if scene and scene != data.get('scene_name'):
-                return False
+                return False, {}
 
-        return True
+        return True, {}
 
     async def execute_action(self, action, context_data):
         sub_actions = action.get('sub_actions', [])
@@ -181,7 +230,19 @@ class ActionEngine:
 
         # --- CHAT (Generic) ---
         elif sa_type == "twitch_chat": # Name is legacy but means "Send Chat"
-            msg = self.replace_vars(config.get('message', ''), ctx)
+            msg_raw = config.get('message', '')
+            
+            # Resolve %game% if needed
+            if "%game%" in msg_raw and "user" in ctx:
+                 if self.twitch:
+                     print(f"[ActionEngine] Fetching game for {ctx['user']}...")
+                     game = await self.twitch.get_user_last_game(ctx['user'])
+                     ctx['game'] = game
+                     print(f"[ActionEngine] Game found: {game}")
+                 else:
+                     ctx['game'] = "Unbekannt (Bot offline)"
+
+            msg = self.replace_vars(msg_raw, ctx)
             platform = ctx.get('platform', 'twitch') # Default to twitch if unknown
             
             if platform == 'youtube' and self.youtube:

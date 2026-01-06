@@ -153,6 +153,40 @@ class TwitchBot(commands.Bot):
             import traceback
             traceback.print_exc()
 
+    async def get_user_last_game(self, username):
+        """
+        Holt das zuletzt gespielte Spiel (oder aktuelle Kategorie) eines Users.
+        """
+        try:
+            # 1. User ID herausfinden
+            users = await self.fetch_users(names=[username])
+            if not users:
+                return "Unbekannt (User nicht gefunden)"
+            
+            user_id = users[0].id
+            
+            # 2. Channel Info via API laden
+            # Wir nutzen direkt die Session von twitchio
+            headers = {
+                "Client-Id": self._http.client_id,
+                "Authorization": f"Bearer {self._http.token.replace('oauth:', '')}"
+            }
+            url = f"https://api.twitch.tv/helix/channels?broadcaster_id={user_id}"
+            
+            async with self._http.session.get(url, headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    items = data.get('data', [])
+                    if items:
+                         game = items[0].get('game_name')
+                         return game if game else "Nichts"
+            
+            return "Unbekannt (API Error)"
+            
+        except Exception as e:
+            print(f"[Twitch API] Error fetching game for {username}: {e}")
+            return "Unbekannt"
+
     async def event_message(self, message):
         # 1. Author Name sicherstellen (bei Echo manchmal None)
         author_name = message.author.display_name if message.author and message.author.display_name else (message.author.name if message.author else self.nick)
