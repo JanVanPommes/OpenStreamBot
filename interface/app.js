@@ -58,6 +58,8 @@ function connect() {
         } else if (data.event === "BadgeMapping") {
             badgeMap = data.data;
             console.log("Badges received:", badgeMap);
+        } else if (data.event === "Error") {
+            addSystemMessage(`❌ FEHLER: ${data.data.message}`);
         }
     };
 }
@@ -183,6 +185,15 @@ function sendMessage() {
             message: text
         }));
         chatInput.value = "";
+    } else {
+        addSystemMessage("Fehler: Nicht verbunden!");
+    }
+}
+
+function startYouTubeStream() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: "youtube_stream_start" }));
+        addSystemMessage("YouTube Stream-Suche angefordert...");
     } else {
         addSystemMessage("Fehler: Nicht verbunden!");
     }

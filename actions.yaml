@@ -69,3 +69,13 @@ actions:
   triggers:
   - scene_name: Stream Starting
     type: obs_scene
+- enabled: true
+  group: test
+  name: Shoutout
+  sub_actions:
+  - message: Schaut gerne bei %user% vorbei! https://twitch.tv/%user% Dort gab es
+      zuletzt %game%
+    type: twitch_chat
+  triggers:
+  - command: '!shout %user%'
+    type: twitch_command

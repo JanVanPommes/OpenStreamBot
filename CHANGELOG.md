@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.3 Alpha] - 2026-01-07
+
+### Added
+- **YouTube Quota Optimization**: Reduced API consumption by ~87%, allowing 7+ hour streams within the 10,000 unit limit.
+- **Manual Stream Trigger**: New "▶ YouTube Start" button in the Dashboard for precise control and unit savings.
+- **Quota Monitoring**: Real-time tracking of used API units in the console and persistent `youtube_quota.json` storage.
+- **Chat ID Caching**: Active Chat IDs are now cached to resume sessions without redundant API calls.
+
+### Changed
+- **Aggressive Polling**: Increased minimum polling interval for YouTube Chat to 15 seconds.
+- **Stream Discovery**: Automatic stream checking reduced to once every 10 minutes (favoring manual start).
+
+### Fixed
+- **Quota Exceeded Crashes**: Improved error handling for 403/404 errors during YouTube polling.
+
 ## [0.1.2 Alpha] - 2026-01-05
 
 ### Added

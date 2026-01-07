@@ -16,8 +16,11 @@
             <img src="../assets/logo.png" alt="OpenStreamBot" style="width: 32px; height: 32px;">
             <h1>OpenStreamBot</h1>
         </div>
-        <button onclick="toggleSettings()"
-            style="background:none; border:none; color:white; cursor:pointer;">⚙️</button>
+        <div style="display:flex; align-items:center; gap: 15px;">
+            <button onclick="startYouTubeStream()" class="btn-yt" title="YouTube Stream-Suche starten">▶ YouTube Start</button>
+            <button onclick="toggleSettings()"
+                style="background:none; border:none; color:white; cursor:pointer; font-size: 1.2em;">⚙️</button>
+        </div>
     </header>
 
     <div id="connection-panel" style="display:none; padding: 10px; background: #3a1c1c; text-align: center;">

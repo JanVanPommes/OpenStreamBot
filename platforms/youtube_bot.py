@@ -8,9 +8,62 @@ from googleapiclient.discovery import build
 import datetime
 import re
 import random
+import time
 
 # Scopes für YouTube Chat
 SCOPES = ['https://www.googleapis.com/auth/youtube.readonly', 'https://www.googleapis.com/auth/youtube.force-ssl']
+
+class QuotaManager:
+    """Trackt den YouTube API Quota Verbrauch"""
+    def __init__(self, quota_file="youtube_quota.json"):
+        self.quota_file = quota_file
+        self.daily_limit = 10000
+        self.consumed = 0
+        self.last_reset = ""
+        self.load()
+
+    def load(self):
+        if os.path.exists(self.quota_file):
+            try:
+                with open(self.quota_file, 'r') as f:
+                    data = json.load(f)
+                    self.consumed = data.get("consumed", 0)
+                    self.last_reset = data.get("last_reset", "")
+            except:
+                pass
+        self.check_reset()
+
+    def save(self):
+        with open(self.quota_file, 'w') as f:
+            json.dump({
+                "consumed": self.consumed,
+                "last_reset": self.last_reset
+            }, f)
+
+    def check_reset(self):
+        # YouTube Reset ist um Mitternacht Pacific Time (PT)
+        # Wir nehmen einfach den aktuellen Tag UTC als einfache Annäherung
+        today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+        if self.last_reset != today:
+            self.consumed = 0
+            self.last_reset = today
+            self.save()
+
+    def consume(self, units):
+        self.check_reset()
+        self.consumed += units
+        self.save()
+        
+        # Logging
+        percent = (self.consumed / self.daily_limit) * 100
+        if percent >= 90:
+            print(f"[YouTube Quota] CRITICAL: {self.consumed}/{self.daily_limit} ({percent:.1f}%)")
+        elif percent >= 80:
+            print(f"[YouTube Quota] WARNING: {self.consumed}/{self.daily_limit} ({percent:.1f}%)")
+        else:
+            print(f"[YouTube Quota] Info: {self.consumed}/{self.daily_limit} ({percent:.1f}%)")
+        
+        return self.consumed
 
 class YouTubeBot:
     def __init__(self, config, event_server):
@@ -20,9 +73,11 @@ class YouTubeBot:
         self.youtube = None
         self.live_chat_id = None
         self.next_page_token = None
-        self.next_page_token = None
         self.polling_task = None
         self.is_running = False
+        self.quota = QuotaManager()
+        self.chat_cache_file = "youtube_active_chat.json"
+        self.min_polling_interval = 15.0 # Aggressive optimization
         
         # Register Handler
         print(f"[DEBUG] YouTubeBot Init - Registering Handler")
@@ -83,16 +138,28 @@ class YouTubeBot:
                 broadcastStatus="active", # Suche nur nach aktiven Streams
                 broadcastType="all"
             )
+            self.quota.consume(100)
             resp = await asyncio.to_thread(req.execute)
             
             items = resp.get("items", [])
             if not items:
-                print("[YouTube] Kein aktiver Stream gefunden. Polling pausiert.")
+                print("[YouTube] Kein aktiver Stream gefunden.")
                 return None
 
             broadcast = items[0]
             chat_id = broadcast['snippet']['liveChatId']
             print(f"[YouTube] Live Stream gefunden: {broadcast['snippet']['title']} (Chat ID: {chat_id})")
+            
+            # Broadcast Erfolg an Dashboard
+            await self.event_server.broadcast("SystemEvent", {
+                "type": "youtube_connected",
+                "message": f"YouTube Stream verbunden: {broadcast['snippet']['title']}"
+            })
+            
+            # Cache Chat ID
+            with open(self.chat_cache_file, 'w') as f:
+                json.dump({"chat_id": chat_id, "timestamp": time.time()}, f)
+                
             return chat_id
             
         except Exception as e:
@@ -107,16 +174,26 @@ class YouTubeBot:
         print("[YouTube] Chat-Polling gestartet.")
         while self.is_running and self.live_chat_id:
             try:
+                # Quota Check before request
+                if self.quota.consumed >= 9900:
+                    print("[YouTube] Quota fast am Limit. Polling pausiert für 5 Min.")
+                    await asyncio.sleep(300)
+                    continue
+
                 req = self.youtube.liveChatMessages().list(
                     liveChatId=self.live_chat_id,
                     part="id,snippet,authorDetails",
                     pageToken=self.next_page_token,
                     maxResults=50 # Max messages per poll
                 )
+                self.quota.consume(5)
                 resp = await asyncio.to_thread(req.execute)
                 
                 self.next_page_token = resp.get('nextPageToken')
-                polling_interval = resp.get('pollingIntervalMillis', 5000) / 1000.0
+                
+                # Polling interval optimization
+                api_interval = resp.get('pollingIntervalMillis', 5000) / 1000.0
+                polling_interval = max(api_interval, self.min_polling_interval)
                 
                 # Nachrichten verarbeiten
                 items = resp.get('items', [])
@@ -127,12 +204,18 @@ class YouTubeBot:
                 
             except Exception as e:
                 err_str = str(e)
-                wait_time = 10
+                wait_time = 15
                 
                 if "quotaExceeded" in err_str:
                     print("[YouTube] CRITICAL: Quota Exceeded! Pausiere für 1 Stunde.")
                     wait_time = 3600 # 1 Hour
                     self.live_chat_id = None # Stop polling current chat to be safe
+                elif "404" in err_str or "forbidden" in err_str.lower():
+                    print(f"[YouTube] Stream scheint beendet (Chat ID {self.live_chat_id} nicht mehr gültig).")
+                    self.live_chat_id = None
+                    if os.path.exists(self.chat_cache_file):
+                        os.remove(self.chat_cache_file)
+                    break
                 else:
                     print(f"[YouTube] Polling Error: {e}")
                 
@@ -193,27 +276,41 @@ class YouTubeBot:
             print("[YouTube] Start abgebrochen.")
             return
 
-        # 2. Stream suchen
+        # 2. Caching: Versuche gecachte Chat-ID
+        if os.path.exists(self.chat_cache_file):
+            try:
+                with open(self.chat_cache_file, 'r') as f:
+                    cached = json.load(f)
+                    # Wenn Cache jünger als 12 Stunden, versuchen wir es
+                    if time.time() - cached.get("timestamp", 0) < 43200:
+                        print(f"[YouTube] Verwende gecachte Chat ID: {cached['chat_id']}")
+                        self.live_chat_id = cached['chat_id']
+            except:
+                pass
+
+        # 3. Stream Loop
         while self.is_running:
-            chat_id = await self.find_active_broadcast()
-            if chat_id:
-                self.live_chat_id = chat_id
+            if self.live_chat_id:
                 # Starte Polling Loop
                 await self.poll_chat()
                 # Wenn poll_chat returned, ist der Stream wohl vorbei oder Error
                 self.live_chat_id = None
             
-            # Wartezeit vor nächstem Check ob Stream online ist
-            print("[YouTube] Warte 60s bis zum nächsten Stream-Check...")
+            # Wartezeit vor nächstem Check oder manuellem Start
+            # Wir checken nur noch alle 10 Minuten automatisch, um Quota zu sparen
+            # Der User soll den manuellen Start Button im Dashboard nutzen.
+            print("[YouTube] Warte auf manuellen Start oder nächsten Auto-Check (10 Min)...")
             
             # Use smaller steps to allow faster interrupt
-            for _ in range(60):
-                if not self.is_running: break
+            for _ in range(600):
+                if not self.is_running or self.live_chat_id: break
                 await asyncio.sleep(1)
             
-            # If we encountered a critical error (like quota) logic inside find_active_broadcast 
-            # or poll_chat should ideally help delay this, but for now 60s is standard.
-            # However, if find_active_broadcast failed heavily, we might want to backoff there too.
+            if self.is_running and not self.live_chat_id:
+                # Auto-Discovery (Backup, falls Dashboard nicht genutzt wird)
+                chat_id = await self.find_active_broadcast()
+                if chat_id:
+                    self.live_chat_id = chat_id
                 
     async def stop(self):
         self.is_running = False
@@ -229,6 +326,15 @@ class YouTubeBot:
                 # Nur senden, wenn wir verbunden sind und eine Chat ID haben
                 if msg and self.live_chat_id:
                     await self.send_chat_message(msg)
+            
+            elif action == "youtube_stream_start":
+                print("[YouTube] Manueller Stream-Start angefordert.")
+                chat_id = await self.find_active_broadcast()
+                if chat_id:
+                    self.live_chat_id = chat_id
+                    # poll_chat wird von start() loop bemerkt
+                else:
+                    await self.event_server.broadcast("Error", {"message": "Kein aktiver YouTube Stream gefunden."})
 
         except Exception as e:
             print(f"[YouTube Error] on_dashboard_message: {e}")
@@ -245,11 +351,7 @@ class YouTubeBot:
                     }
                 }
             }
-            req = self.youtube.liveChatMessages().insert(
-                part="snippet",
-                body=body
-            )
-            # Execute in thread to avoid blocking loop
+            self.quota.consume(50)
             await asyncio.to_thread(req.execute)
             print(f"[YouTube -> Chat] {message_text}")
         except Exception as e:
@@ -272,7 +374,7 @@ class YouTubeBot:
                     return 0
 
             # 1. Get Uploads Playlist ID
-            req = self.youtube.channels().list(mine=True, part='contentDetails')
+            self.quota.consume(1)
             resp = await asyncio.to_thread(req.execute)
             uploads_playlist_id = resp['items'][0]['contentDetails']['relatedPlaylists']['uploads']
             
@@ -284,12 +386,7 @@ class YouTubeBot:
             fetched_count = 0
             
             while True:
-                pl_req = self.youtube.playlistItems().list(
-                    playlistId=uploads_playlist_id,
-                    part='contentDetails',
-                    maxResults=50,
-                    pageToken=next_token
-                )
+                self.quota.consume(1)
                 pl_resp = await asyncio.to_thread(pl_req.execute)
                 
                 # Collect IDs
@@ -309,10 +406,7 @@ class YouTubeBot:
                     video_ids_buffer = video_ids_buffer[50:] # keep rest
                     
                     if batch:
-                        vid_req = self.youtube.videos().list(
-                            id=','.join(batch),
-                            part='contentDetails'
-                        )
+                        self.quota.consume(1)
                         vid_resp = await asyncio.to_thread(vid_req.execute)
                         
                         for vid_item in vid_resp.get('items', []):

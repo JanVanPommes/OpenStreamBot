@@ -211,6 +211,23 @@ button:hover {
     border-color: #52525b;
 }
 
+.btn-yt {
+    background-color: #ff0000;
+    color: #fff;
+    border: none;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 15px;
+    transition: background-color 0.2s;
+}
+
+.btn-yt:hover {
+    background-color: #cc0000;
+    border-color: transparent !important;
+}
+
 input[type=range] {
     width: 100%;
     accent-color: var(--accent-color);

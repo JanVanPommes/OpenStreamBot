@@ -3,7 +3,11 @@ config.yaml
 token_*.json
 client_secret.json
 .yt_control
+.yt_sync_trigger
 .bot_status
+youtube_quota.json
+youtube_active_chat.json
+shorts_cache.json
 
 # User Data
 profiles/
