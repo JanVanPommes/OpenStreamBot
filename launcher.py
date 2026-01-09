@@ -14,6 +14,16 @@ from core.profile_manager import ProfileManager
 from PIL import Image
 import signal
 
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
 # Erscheinungsbild setzen
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -21,6 +31,7 @@ ctk.set_default_color_theme("blue")
 CONFIG_FILE = "config.yaml"
 # Nutze nun den internen Webserver statt Datei-Pfad
 DASHBOARD_URL = "http://localhost:8000/interface/dashboard.html"
+VERSION = "0.2.0"
 
 class ConsoleRedirector:
     def __init__(self, text_widget, queue):
@@ -53,7 +64,8 @@ class App(ctk.CTk):
 
         # Set Window Icon
         try:
-            icon_img = Image.open("assets/logo.png")
+            icon_path = resource_path("assets/logo.png")
+            icon_img = Image.open(icon_path)
             icon_tk = ctk.CTkImage(light_image=icon_img, dark_image=icon_img)._light_image # Use raw PIL image for wm_iconphoto
             # Actually Tkinter PhotoImage or PIL ImageTk is needed for wm_iconphoto
             from PIL import ImageTk
@@ -69,7 +81,8 @@ class App(ctk.CTk):
 
         # Logo
         try:
-            logo_img = Image.open("assets/logo.png")
+            logo_path = resource_path("assets/logo.png")
+            logo_img = Image.open(logo_path)
             logo_ctk = ctk.CTkImage(light_image=logo_img, dark_image=logo_img, size=(80, 80))
             self.logo_image = ctk.CTkLabel(self.sidebar_frame, image=logo_ctk, text="")
             self.logo_image.grid(row=0, column=0, padx=20, pady=(20, 5))
@@ -240,9 +253,49 @@ class App(ctk.CTk):
 
 
         self.update_account_status()
+        
+        # Check for updates
+        self.check_for_updates()
 
-    def update_account_status(self):
-        # Twitch Check
+    def check_for_updates(self):
+        def run_check():
+            try:
+                import urllib.request
+                import json
+                from packaging import version
+                
+                url = "https://api.github.com/repos/JanVanPommes/OpenStreamBot/releases/latest"
+                req = urllib.request.Request(url, headers={'User-Agent': "OpenStreamBot-Launcher"})
+                
+                with urllib.request.urlopen(req) as response:
+                    data = json.load(response)
+                    latest_tag = data.get("tag_name", "").lstrip("v")
+                    html_url = data.get("html_url", "")
+                    
+                    current_v = version.parse(VERSION)
+                    latest_v = version.parse(latest_tag)
+                    
+                    if latest_v > current_v:
+                        self.show_update_available(latest_tag, html_url)
+                        
+            except Exception as e:
+                print(f"Update check failed: {e}")
+
+        threading.Thread(target=run_check, daemon=True).start()
+
+    def show_update_available(self, new_version, url):
+        # Update UI in main thread
+        def ui_update():
+            btn = ctk.CTkButton(self.sidebar_frame, text=f"Update Avail: v{new_version}", 
+                                fg_color="#F59E0B", hover_color="#D97706",
+                                command=lambda: webbrowser.open(url))
+            btn.grid(row=9, column=0, padx=20, pady=(10, 20))
+            
+            # Also notify in dashboard log
+            self.log_queue.put(f"\n[System] Update Available: v{new_version} (Current: v{VERSION})\n")
+        
+        self.after(0, ui_update)
+
         if os.path.exists("token_twitch.json"):
             self.twitch_status.configure(text="Connected", text_color="green")
             self.btn_twitch_login.configure(state="disabled")
@@ -495,11 +548,38 @@ class App(ctk.CTk):
             self.stop_bot()
 
     def start_bot(self):
-        if not os.path.exists("./venv/bin/python"):
-             messagebox.showerror("Error", "Virtual environment not found in ./venv")
-             return
+        if getattr(sys, 'frozen', False):
+             # Frozen (compiled) mode
+             base_dir = os.path.dirname(sys.executable)
+             
+             # Locate Bot Executable (created by PyInstaller onedir)
+             # Name was set to "bot_internal" in build.py
+             exe_name = "bot_internal.exe" if os.name == 'nt' else "bot_internal"
+             bot_exe_path = os.path.join(base_dir, "bot_internal", exe_name)
+             
+             if not os.path.exists(bot_exe_path):
+                 messagebox.showerror("Error", f"Bot Executable not found at:\n{bot_exe_path}")
+                 return
 
-        cmd = ["./venv/bin/python", "-u", "main.py"] # -u required for unbuffered output
+             cmd = [bot_exe_path]
+        else:
+             # Dev mode (script)
+             if not os.path.exists("./venv/bin/python") and not os.path.exists("./venv/Scripts/python.exe"):
+                  # Try system python or just warn? Assuming venv structure.
+                  # Let's be robust
+                  python_exe = sys.executable
+             else:
+                  # Check linux/windows venv
+                  if os.name == 'nt':
+                       python_exe = "./venv/Scripts/python.exe"
+                  else:
+                       python_exe = "./venv/bin/python"
+             
+             if not os.path.exists(python_exe):
+                  # Fallback
+                  python_exe = sys.executable
+                  
+             cmd = [python_exe, "-u", "main.py"]
         
         try:
             # Start process properly

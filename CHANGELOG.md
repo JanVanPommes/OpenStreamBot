@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0 Beta] - 2026-01-09
+### Added
+- **Windows Installer**: Easier installation via `OpenStreamBot_Setup.exe` (no Python installation required).
+- **Executable Support**: Bot now runs as a standalone `OpenStreamBot.exe` on Windows.
+- **Build System**: New `build.py` script to generate executables and installers using PyInstaller.
+- **Auto-Update Check**: Launcher now notifies you when a new version is available on GitHub.
+- **CI/CD**: Automatic build of Windows Installer via GitHub Actions on every push.
+
 ## [0.1.3 Alpha] - 2026-01-07
 
 ### Added

@@ -1,6 +1,6 @@
 # OpenStreamBot
 
-**Version:** 0.1.3 Alpha  
+**Version:** 0.2.0 Beta  
 **Ein Multi-Plattform Stream-Bot für Twitch & YouTube**
 
 OpenStreamBot ist ein Open-Source-Bot für Streamer, der Twitch und YouTube integriert, OBS Studio steuern kann und ein flexibles Action-System bietet. Ideal für Creator, die ihre Streams automatisieren und interaktiver gestalten möchten.
@@ -24,6 +24,7 @@ OpenStreamBot ist ein Open-Source-Bot für Streamer, der Twitch und YouTube inte
 - **Web Dashboard**: Moderne Web-UI für Chat-Verwaltung und Übersicht
 - **Quota-Optimierung**: YouTube nur auf Knopfdruck aktivieren (spart API-Quota)
 - **GUI Launcher**: Einfache Verwaltung über Desktop-Anwendung
+- **Windows Installer**: Einfacher Setup-Assistent für Windows-Nutzer
 
 ---
 
@@ -38,7 +39,15 @@ OpenStreamBot ist ein Open-Source-Bot für Streamer, der Twitch und YouTube inte
 
 ## 🚀 Installation
 
-### 🛠️ Betriebssystem-spezifische Installation
+### 📦 Einfache Installation (Windows)
+
+1. **Download**: Gehe zur [Releases](https://github.com/JanVanPommes/OpenStreamBot/releases) Seite.
+2. **Installer laden**: Lade die neuste `OpenStreamBot_Setup.exe` herunter.
+   > **Hinweis**: Dank GitHub Actions wird diese Datei nun automatisch für jedes Update erstellt!
+3. **Installieren**: Ausführen, Installationsort wählen, fertig.
+4. **Updates**: Der Launcher zeigt dir automatisch an, wenn eine neue Version verfügbar ist!
+
+### 🛠️ Manuelle Installation / Vom Quellcode
 
 #### **Windows**
 1. **Python installieren**: Lade Python 3.10+ von [python.org](https://www.python.org/downloads/windows/) herunter (Häkchen bei "Add Python to PATH" setzen!).
@@ -48,7 +57,12 @@ OpenStreamBot ist ein Open-Source-Bot für Streamer, der Twitch und YouTube inte
      ```cmd
      python -m venv venv
      venv\Scripts\activate
-     pip install -r requirements.txt
+     python -m pip install -r requirements.txt
+     ```
+   - *EXE selbst bauen*:
+     ```cmd
+     pip install pyinstaller
+     python build.py
      ```
 
 #### **macOS**
@@ -60,6 +74,8 @@ OpenStreamBot ist ein Open-Source-Bot für Streamer, der Twitch und YouTube inte
    source venv/bin/activate
    pip install -r requirements.txt
    chmod +x start_launcher.sh
+   # Starten
+   ./start_launcher.sh
    ```
 
 #### **Linux (Ubuntu/Debian)**
@@ -76,6 +92,8 @@ OpenStreamBot ist ein Open-Source-Bot für Streamer, der Twitch und YouTube inte
    source venv/bin/activate
    pip install -r requirements.txt
    chmod +x start_launcher.sh
+   # Starten
+   ./start_launcher.sh
    ```
 
 ### 4. Konfiguration erstellen

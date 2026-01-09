@@ -11,6 +11,9 @@ shorts_cache.json
 
 # User Data
 profiles/
+dist/
+build/
+*.spec
 
 # Python
 __pycache__/

@@ -1,6 +1,6 @@
 # OpenStreamBot
 
-**Version:** 0.1.3 Alpha  
+**Version:** 0.2.0 Beta  
 **A Multi-Platform Stream Bot for Twitch & YouTube**
 
 OpenStreamBot is an open-source bot for streamers that integrates Twitch and YouTube, can control OBS Studio, and offers a flexible action system. Perfect for creators who want to automate and make their streams more interactive.
@@ -24,6 +24,7 @@ OpenStreamBot is an open-source bot for streamers that integrates Twitch and You
 - **Web Dashboard**: Modern web UI for chat management and overview
 - **Quota Optimization**: Activate YouTube only on-demand (saves API quota)
 - **GUI Launcher**: Easy management via desktop application
+- **Windows Installer**: Easy Setup wizard for Windows users
 
 ---
 
@@ -38,7 +39,15 @@ OpenStreamBot is an open-source bot for streamers that integrates Twitch and You
 
 ## 🚀 Installation
 
-### 🛠️ OS-Specific Installation
+### 📦 Easy Installation (Windows)
+
+1. **Download**: Go to the [Releases](https://github.com/JanVanPommes/OpenStreamBot/releases) page.
+2. **Get the Installer**: Download the latest `OpenStreamBot_Setup.exe`.
+   > **Note**: This file is automatically built via GitHub Actions for every update!
+3. **Install**: Run the installer, choose your folder, done.
+4. **Updates**: The Launcher will automatically notify you when a new version is available!
+
+### 🛠️ Manual Installation / From Source
 
 #### **Windows**
 1. **Install Python**: Download Python 3.10+ from [python.org](https://www.python.org/downloads/windows/) (Check "Add Python to PATH"!).
@@ -48,7 +57,12 @@ OpenStreamBot is an open-source bot for streamers that integrates Twitch and You
      ```cmd
      python -m venv venv
      venv\Scripts\activate
-     pip install -r requirements.txt
+     python -m pip install -r requirements.txt
+     ```
+   - *Build EXE yourself*:
+     ```cmd
+     pip install pyinstaller
+     python build.py
      ```
 
 #### **macOS**
@@ -60,6 +74,8 @@ OpenStreamBot is an open-source bot for streamers that integrates Twitch and You
    source venv/bin/activate
    pip install -r requirements.txt
    chmod +x start_launcher.sh
+   # Run
+   ./start_launcher.sh
    ```
 
 #### **Linux (Ubuntu/Debian)**
@@ -76,6 +92,8 @@ OpenStreamBot is an open-source bot for streamers that integrates Twitch and You
    source venv/bin/activate
    pip install -r requirements.txt
    chmod +x start_launcher.sh
+   # Run
+   ./start_launcher.sh
    ```
 
 ### 4. Create Configuration
