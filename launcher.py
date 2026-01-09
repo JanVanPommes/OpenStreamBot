@@ -296,6 +296,7 @@ class App(ctk.CTk):
         
         self.after(0, ui_update)
 
+    def update_account_status(self):
         if os.path.exists("token_twitch.json"):
             self.twitch_status.configure(text="Connected", text_color="green")
             self.btn_twitch_login.configure(state="disabled")
