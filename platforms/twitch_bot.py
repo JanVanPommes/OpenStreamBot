@@ -4,7 +4,7 @@ import os
 import json
 import asyncio
 import webbrowser
-from core.auth import perform_twitch_oauth_flow
+from core.auth import perform_twitch_oauth_flow, validate_twitch_token, refresh_twitch_token
 
 async def setup_twitch_token(config):
     """
@@ -33,24 +33,51 @@ async def setup_twitch_token(config):
         except:
             pass
 
-    if not creds:
-        # HIER KEIN AUTO-LOGIN MEHR! 
-        # Der User soll das über den Launcher machen, ODER wir lassen es als Fallback.
-        # Da wir "setup_twitch_token" in main.py aufrufen, wenn enabled=True,
-        # ist es besser, wenn wir hier Auto-Login machen, falls Datei fehlt.
-        # ABER: Launcher soll das auch können.
+    if creds:
+        # Check validity
+        access_token = creds.get('access_token')
+        refresh_token = creds.get('refresh_token')
         
-        print("[Twitch] Kein Token gefunden. Starte Browser-Login...")
-        try:
-            creds = await perform_twitch_oauth_flow(client_id, client_secret)
-            if creds:
-                with open(token_file, 'w') as f:
-                    json.dump(creds, f)
-        except Exception as e:
-            print(f"[Twitch] Auto-Login fehlgeschlagen: {e}")
-            return None
+        if access_token:
+            print("[Twitch] Prüfe Token-Gültigkeit...")
+            validation = await validate_twitch_token(access_token)
             
-    return creds.get('access_token')
+            if validation:
+                print(f"[Twitch] Token ist gültig (Expires in: {validation.get('expires_in')}s)")
+                return access_token
+            else:
+                print("[Twitch] Token abgelaufen oder ungültig.")
+                
+                # Versuche Refresh
+                if refresh_token:
+                    print("[Twitch] Versuche Token-Refresh...")
+                    try:
+                        new_creds = await refresh_twitch_token(client_id, client_secret, refresh_token)
+                        
+                        # Neue Daten speichern
+                        with open(token_file, 'w') as f:
+                            json.dump(new_creds, f)
+                            
+                        print("[Twitch] Token erfolgreich aktualisiert!")
+                        return new_creds.get('access_token')
+                    except Exception as e:
+                        print(f"[Twitch] Refresh fehlgeschlagen: {e}")
+                else:
+                    print("[Twitch] Kein Refresh Token vorhanden.")
+    
+    # Fallback: Neuer Browser Login, wenn alles fehlschlägt
+    print("[Twitch] Kein gültiger Token. Starte Browser-Login...")
+    try:
+        creds = await perform_twitch_oauth_flow(client_id, client_secret)
+        if creds:
+            with open(token_file, 'w') as f:
+                json.dump(creds, f)
+            return creds.get('access_token')
+    except Exception as e:
+        print(f"[Twitch] Auto-Login fehlgeschlagen: {e}")
+        return None
+    
+    return None
 
 class TwitchBot(commands.Bot):
     def __init__(self, token, config, event_server):

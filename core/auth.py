@@ -60,6 +60,35 @@ async def perform_twitch_oauth_flow(client_id, client_secret, redirect_uri="http
                 text = await resp.text()
                 raise Exception(f"Token Exchange fehlgeschlagen: {text}")
 
+async def validate_twitch_token(access_token):
+    """Prüft, ob der Token noch gültig ist."""
+    headers = {"Authorization": f"OAuth {access_token}"}
+    try:
+        async with ClientSession() as session:
+            async with session.get("https://id.twitch.tv/oauth2/validate", headers=headers) as resp:
+                if resp.status == 200:
+                    return await resp.json() # Enthält 'expires_in', 'login', etc.
+                return None
+    except:
+        return None
+
+async def refresh_twitch_token(client_id, client_secret, refresh_token):
+    """Erneuert den Access Token mithilfe des Refresh Tokens."""
+    url = "https://id.twitch.tv/oauth2/token"
+    params = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": client_id,
+        "client_secret": client_secret
+    }
+    async with ClientSession() as session:
+        async with session.post(url, params=params) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            else:
+                text = await resp.text()
+                raise Exception(f"Token Refresh fehlgeschlagen: {text}")
+
 # --- YOUTUBE AUTH ---
 
 def perform_youtube_oauth_flow(client_secret_file, token_file):
