@@ -7,6 +7,7 @@ twitch:
   client_id: YOUR_TWITCH_CLIENT_ID_HERE
   client_secret: YOUR_TWITCH_CLIENT_SECRET_HERE
   channel: your_twitch_username
+  redirect_uri: "http://localhost:3000" # Optional: Change if you registered a different URI
 
 youtube:
   enabled: false  # Set to true after setting up

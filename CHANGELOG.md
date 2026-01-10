@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.1 Beta] - 2026-01-10
+### Fixed
+- **Twitch Authentication**: Fixed "redirect_mismatch" error by allowing custom `redirect_uri` in `config.yaml`.
+- **Local Webserver**: Now listens on `0.0.0.0` (all interfaces) to resolve IPv4/IPv6 localhost binding issues on Windows.
+- **Login Feedback**: Detailed error messages are now shown in the browser if the Twitch login fails.
+
 ## [0.2.0 Beta] - 2026-01-09
 ### Added
 - **Windows Installer**: Easier installation via `OpenStreamBot_Setup.exe` (no Python installation required).

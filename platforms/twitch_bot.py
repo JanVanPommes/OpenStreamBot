@@ -68,7 +68,8 @@ async def setup_twitch_token(config):
     # Fallback: Neuer Browser Login, wenn alles fehlschlägt
     print("[Twitch] Kein gültiger Token. Starte Browser-Login...")
     try:
-        creds = await perform_twitch_oauth_flow(client_id, client_secret)
+        redirect_uri = config.get('redirect_uri', 'http://localhost:3000')
+        creds = await perform_twitch_oauth_flow(client_id, client_secret, redirect_uri=redirect_uri)
         if creds:
             with open(token_file, 'w') as f:
                 json.dump(creds, f)

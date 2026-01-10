@@ -8,21 +8,36 @@ from aiohttp import web, ClientSession
 
 async def perform_twitch_oauth_flow(client_id, client_secret, redirect_uri="http://localhost:3000"):
     """Startet lokalen Webserver und öffnet Browser für Twitch Login"""
+    import urllib.parse
+    
+    # Port dynamisch aus redirect_uri ermitteln
+    parsed_uri = urllib.parse.urlparse(redirect_uri)
+    port = parsed_uri.port if parsed_uri.port else 80
+    
     code_future = asyncio.Future()
     
     async def callback(request):
+        # Fehlerbehandlung: Wenn Twitch einen Fehler zurückgibt (z.B. user_denied)
+        error = request.query.get('error')
+        if error:
+            error_desc = request.query.get('error_description', 'Unbekannter Fehler')
+            return web.Response(text=f"<h1>Login Fehlgeschlagen</h1><p>Fehler: {error}</p><p>Beschreibung: {error_desc}</p>")
+
         code = request.query.get('code')
         if code:
             if not code_future.done():
                 code_future.set_result(code)
             return web.Response(text="<h1>Login erfolgreich!</h1><p>Du kannst dieses Fenster jetzt schliessen.</p>")
+        
         return web.Response(text="Fehler: Kein Code gefunden.")
 
     app = web.Application()
     app.add_routes([web.get('/', callback)])
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, 'localhost', 3000)
+    
+    # Listen on all interfaces to be safe (IPv4/IPv6 issues on Windows)
+    site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
 
     # Browser öffnen
@@ -31,14 +46,19 @@ async def perform_twitch_oauth_flow(client_id, client_secret, redirect_uri="http
                 f"&redirect_uri={redirect_uri}&scope={scope}")
     
     print(f"Öffne Browser: {auth_url}")
-    webbrowser.open(auth_url)
+    # Versuche den Browser zu öffnen
+    try:
+        webbrowser.open(auth_url)
+    except Exception as e:
+        print(f"Konnte Browser nicht automatisch öffnen: {e}")
+        print(f"Bitte öffne diesen Link manuell: {auth_url}")
     
     try:
         # Warte auf Code (120s Timeout)
         code = await asyncio.wait_for(code_future, timeout=120)
     except asyncio.TimeoutError:
         await site.stop()
-        raise Exception("Zeitüberschreitung beim Login.")
+        raise Exception("Zeitüberschreitung beim Login. Bitte versuche es erneut.")
         
     await site.stop()
 

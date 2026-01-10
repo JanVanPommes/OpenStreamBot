@@ -31,7 +31,7 @@ ctk.set_default_color_theme("blue")
 CONFIG_FILE = "config.yaml"
 # Nutze nun den internen Webserver statt Datei-Pfad
 DASHBOARD_URL = "http://localhost:8000/interface/dashboard.html"
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 class ConsoleRedirector:
     def __init__(self, text_widget, queue):
@@ -340,13 +340,14 @@ class App(ctk.CTk):
                 
                 cid = cfg['twitch']['client_id']
                 secret = cfg['twitch']['client_secret']
+                redirect_uri = cfg.get('twitch', {}).get('redirect_uri', 'http://localhost:3000')
                 
                 # Import here to avoid overhead at start
                 import asyncio
                 from core.auth import perform_twitch_oauth_flow
                 import json
                 
-                creds = asyncio.run(perform_twitch_oauth_flow(cid, secret))
+                creds = asyncio.run(perform_twitch_oauth_flow(cid, secret, redirect_uri=redirect_uri))
                 with open("token_twitch.json", "w") as f:
                     json.dump(creds, f)
                     

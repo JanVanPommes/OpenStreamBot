@@ -57,6 +57,9 @@ actions:
   - ms: 100000
     type: delay
   - type: youtube_random_short
+  - ms: 100000
+    type: delay
+  - type: youtube_random_short
   triggers: []
 - enabled: true
   group: Automation
