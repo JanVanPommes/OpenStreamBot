@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.2 Beta] - 2026-01-21
+### Fixed
+- **Update Loop**: Bumped version to `0.2.2` to resolve an issue where the launcher constantly requested an update.
+- **Twitch OAuth**: Fixed "Resource not found" error on Windows by implementing explicit root routing for the callback.
+
 ## [0.2.1 Beta] - 2026-01-10
 ### Fixed
 - **Twitch Authentication**: Fixed "redirect_mismatch" error by allowing custom `redirect_uri` in `config.yaml`.
