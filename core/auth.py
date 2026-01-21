@@ -17,26 +17,36 @@ async def perform_twitch_oauth_flow(client_id, client_secret, redirect_uri="http
     code_future = asyncio.Future()
     
     async def callback(request):
+        # Log path for debugging
+        print(f"[OAuth] Request received: {request.method} {request.path} | Query: {request.query_string}")
+        
         # Fehlerbehandlung: Wenn Twitch einen Fehler zurückgibt (z.B. user_denied)
         error = request.query.get('error')
         if error:
             error_desc = request.query.get('error_description', 'Unbekannter Fehler')
-            return web.Response(text=f"<h1>Login Fehlgeschlagen</h1><p>Fehler: {error}</p><p>Beschreibung: {error_desc}</p>")
+            return web.Response(text=f"<h1>Login Fehlgeschlagen</h1><p>Fehler: {error}</p><p>Beschreibung: {error_desc}</p>", content_type='text/html')
 
         code = request.query.get('code')
         if code:
             if not code_future.done():
                 code_future.set_result(code)
-            return web.Response(text="<h1>Login erfolgreich!</h1><p>Du kannst dieses Fenster jetzt schliessen.</p>")
+            return web.Response(text="<h1>Login erfolgreich!</h1><p>Du kannst dieses Fenster jetzt schliessen.</p>", content_type='text/html')
         
-        return web.Response(text="Fehler: Kein Code gefunden.")
+        # Fallback if accessed without code
+        return web.Response(text="<h1>OpenStreamBot OAuth</h1><p>Warte auf Callback...</p>", content_type='text/html')
 
     app = web.Application()
-    app.add_routes([web.get('/', callback)])
+    # Explicitly add root route AND catch-all to ensure Windows handling works
+    app.add_routes([
+        web.get('/', callback),
+        web.get('/{tail:.*}', callback)
+    ])
+    
     runner = web.AppRunner(app)
     await runner.setup()
     
-    # Listen on all interfaces to be safe (IPv4/IPv6 issues on Windows)
+    # Listen on all interfaces to be safe
+    # Try generic bind (None) first or explicit 0.0.0.0
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
 
