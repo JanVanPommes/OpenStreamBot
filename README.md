@@ -18,6 +18,9 @@ OpenStreamBot is an open-source bot for streamers that integrates Twitch and You
   - **New:** YouTube Shorts (Random Shorts playback with Overlay)
   - **New:** Auto-Ducking (Lowers music during videos)
   - **New:** Timer Triggers (Interval based actions)
+  - **New:** Channel Points (Trigger & Management)
+  - **New:** User Permissions (Mod/VIP/Sub only commands)
+  - **New:** HotSwitch (Instant Action Toggling)
   - React to events (raids, subs, etc.)
   - Grouping and organization
 - **Profile Manager**: Save and load different bot configurations
