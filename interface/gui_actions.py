@@ -51,7 +51,20 @@ class ActionEditorFrame(ctk.CTkFrame):
         
         self.var_action_group = ctk.StringVar()
         self.entry_group = ctk.CTkEntry(self.header_frame, textvariable=self.var_action_group, width=100, placeholder_text="Group")
-        self.entry_group.pack(side="right")
+        self.var_action_group = ctk.StringVar()
+        self.entry_group = ctk.CTkEntry(self.header_frame, textvariable=self.var_action_group, width=100, placeholder_text="Group")
+        self.entry_group.pack(side="right", padx=5)
+        
+        # Cooldown
+        self.var_cooldown = ctk.StringVar()
+        ctk.CTkLabel(self.header_frame, text="CD (s):").pack(side="right", padx=2)
+        self.entry_cooldown = ctk.CTkEntry(self.header_frame, textvariable=self.var_cooldown, width=50)
+        self.entry_cooldown.pack(side="right", padx=2)
+        
+        # Enabled Switch
+        self.var_enabled = ctk.BooleanVar(value=True)
+        self.switch_enabled = ctk.CTkSwitch(self.header_frame, text="Active", variable=self.var_enabled, width=60, command=self.on_hot_switch_toggle)
+        self.switch_enabled.pack(side="right", padx=10)
         
         # Triggers Section
         self.frame_triggers = ctk.CTkFrame(self.editor_panel)
@@ -95,7 +108,81 @@ class ActionEditorFrame(ctk.CTkFrame):
         data = {'actions': self.actions}
         with open(self.config_file, 'w') as f:
             yaml.dump(data, f)
-        messagebox.showinfo("Saved", "Actions saved! Restart Bot to apply.")
+        messagebox.showinfo("Saved", "Actions saved! (Reloading...)")
+        self._send_reload_signal()
+
+    def _send_reload_signal(self):
+        def run():
+            import asyncio
+            import websockets
+            import json
+            async def send():
+                try:
+                    async with websockets.connect("ws://localhost:8000") as ws:
+                        await ws.send(json.dumps({"event": "reload_actions"}))
+                        print("Reload signal sent.")
+                except Exception as e:
+                    print(f"Reload Signal Failed: {e}")
+            
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(send())
+                loop.close()
+            except Exception as e:
+                print(f"Reload Signal Error: {e}")
+
+        import threading
+        threading.Thread(target=run, daemon=True).start()
+
+    def on_hot_switch_toggle(self):
+        if not self.current_action: return
+        
+        # 1. Update local state
+        new_state = self.var_enabled.get()
+        self.current_action['enabled'] = new_state
+        
+        # 2. Send WS
+        def run():
+            import asyncio
+            import websockets
+            import json
+            async def send():
+                try:
+                    async with websockets.connect("ws://localhost:8000") as ws:
+                        payload = {
+                            "event": "set_action_state", 
+                            "data": {
+                                "action": self.current_action.get('name'), 
+                                "state": new_state
+                            }
+                        }
+                        await ws.send(json.dumps(payload))
+                except Exception as e:
+                    print(f"HotSwitch Failed: {e}")
+            
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(send())
+                loop.close()
+            except Exception as e:
+                print(f"HotSwitch Error: {e}")
+
+        import threading
+        threading.Thread(target=run, daemon=True).start()
+        
+        # 3. Update List UI (Delayed to allow thread start)
+        # We don't want to loose selection, so we rely on the header switch state for visual feedback
+        # But we should update the list text (Off) marker.
+        # If we refresh, we lose selection.
+        # Let's just refresh and select back? 
+        # Easier: Don't refresh list instantly, let user save if they want permanent visual update in list?
+        # User said "HotSwitch". Visual feedback in list is secondary to functionality.
+        # But helpful.
+        # I'll enable a lightweight refresh or just ignore list update for now to avoid UX jitter.
+        # Actually, self.refresh_action_list() destroys widgets.
+        # Let's skip list refresh for now to be smoother. The Switch itself shows the state.
 
     def refresh_action_list(self):
         for widget in self.action_listbox.winfo_children():
@@ -119,7 +206,11 @@ class ActionEditorFrame(ctk.CTkFrame):
                 # Find original index
                 idx = self.actions.index(action)
                 
-                btn = ctk.CTkButton(self.action_listbox, text=action.get('name', 'Untitled'), 
+                name_txt = action.get('name', 'Untitled')
+                if not action.get('enabled', True):
+                    name_txt += " (Off)"
+                    
+                btn = ctk.CTkButton(self.action_listbox, text=name_txt, 
                                     command=lambda i=idx: self.select_action(i),
                                     fg_color="transparent", border_width=1, text_color=("gray10", "gray90"))
                 btn.pack(fill="x", pady=2)
@@ -128,13 +219,21 @@ class ActionEditorFrame(ctk.CTkFrame):
         self.commit_current_changes()
         self.current_action = self.actions[index]
         self.var_action_name.set(self.current_action.get('name', ''))
+        self.var_action_name.set(self.current_action.get('name', ''))
         self.var_action_group.set(self.current_action.get('group', 'General'))
+        self.var_cooldown.set(str(self.current_action.get('cooldown', 0)))
+        self.var_enabled.set(self.current_action.get('enabled', True))
         self.refresh_details()
 
     def commit_current_changes(self):
         if self.current_action:
             self.current_action['name'] = self.var_action_name.get()
             self.current_action['group'] = self.var_action_group.get()
+            self.current_action['enabled'] = self.var_enabled.get()
+            try:
+                self.current_action['cooldown'] = int(self.var_cooldown.get() or 0)
+            except:
+                self.current_action['cooldown'] = 0
             # Triggers/Subs are modified directly in the list references usually, 
             # so strict commit might not be needed if references are kept.
             pass
@@ -169,10 +268,13 @@ class ActionEditorFrame(ctk.CTkFrame):
             f = ctk.CTkFrame(self.scroll_triggers)
             f.pack(fill="x", pady=2)
             text = f"{t['type']}"
-            if 'command' in t: text += f": {t['command']}"
+            if 'command' in t: 
+                perm = t.get('permission', 'Everyone')
+                text += f": {t['command']} [{perm}]"
             elif 'scene_name' in t: text += f": {t['scene_name']}"
             elif 'min_viewers' in t: text += f" (>{t['min_viewers']})"
             elif 'interval' in t: text += f" ({t['interval']}s)"
+            elif 'reward_title' in t: text += f": {t['reward_title']}"
             
             lbl = ctk.CTkLabel(f, text=text)
             lbl.pack(side="left", padx=5)
@@ -207,7 +309,11 @@ class ActionEditorFrame(ctk.CTkFrame):
             elif 'ms' in s: summary += f": {s['ms']}ms"
             elif 'folder' in s: summary += f": {s['folder']}"
             elif 'file' in s: summary += f": {os.path.basename(s['file'])}"
-            elif 'action_name' in s: summary += f": -> {s['action_name']}"
+            elif 'action_name' in s: 
+                if s['type'] == 'set_action_state':
+                    summary += f": '{s['action_name']}' -> {s.get('state')} ({s.get('duration')}s)"
+                else: 
+                    summary += f": -> {s['action_name']}"
             
             lbl = ctk.CTkLabel(f, text=summary)
             lbl.pack(side="left", padx=5)
@@ -309,7 +415,7 @@ class SubActionDialog(ctk.CTkToplevel):
         self.type_var = ctk.StringVar(value=start_type)
         
         # Sort and unique
-        sub_types = sorted(list(set(["twitch_chat", "delay", "log", "play_sound", "stop_sounds", "playlist", "stop_playlist", "obs_set_scene", "youtube_random_short", "trigger_action", "set_volume"])))
+        sub_types = sorted(list(set(["twitch_chat", "delay", "log", "play_sound", "stop_sounds", "playlist", "stop_playlist", "obs_set_scene", "youtube_random_short", "trigger_action", "set_volume", "set_action_state"])))
         
         self.combo = ctk.CTkComboBox(self, variable=self.type_var, 
                                      values=sub_types,
@@ -449,10 +555,36 @@ class SubActionDialog(ctk.CTkToplevel):
 
         elif choice == "trigger_action":
             ctk.CTkLabel(self.frame_config, text="Action Name to Trigger:").pack(anchor="w")
-            entry = ctk.CTkEntry(self.frame_config)
-            entry.insert(0, get_val('action_name'))
-            entry.pack(fill="x", pady=5)
-            self.widgets['action_name'] = entry
+            
+            # Get Action Names
+            action_names = sorted([a.get('name', 'Untitled') for a in self.master.actions])
+            
+            act_var = ctk.StringVar(value=get_val('action_name'))
+            combo = ctk.CTkComboBox(self.frame_config, variable=act_var, values=action_names)
+            combo.pack(fill="x", pady=5)
+            self.widgets['action_name'] = act_var
+
+        elif choice == "set_action_state":
+            ctk.CTkLabel(self.frame_config, text="Target Action Name:").pack(anchor="w")
+            
+            # Get Action Names
+            action_names = sorted([a.get('name', 'Untitled') for a in self.master.actions])
+            
+            act_var = ctk.StringVar(value=get_val('action_name'))
+            combo = ctk.CTkComboBox(self.frame_config, variable=act_var, values=action_names)
+            combo.pack(fill="x", pady=5)
+            self.widgets['action_name'] = act_var
+            
+            ctk.CTkLabel(self.frame_config, text="New State:").pack(anchor="w")
+            state_var = ctk.StringVar(value=get_val('state', 'toggle'))
+            ctk.CTkComboBox(self.frame_config, variable=state_var, values=['on', 'off', 'toggle']).pack(fill="x", pady=5)
+            self.widgets['state'] = state_var
+            
+            ctk.CTkLabel(self.frame_config, text="Duration (seconds, 0=permanent):").pack(anchor="w")
+            dur_entry = ctk.CTkEntry(self.frame_config)
+            dur_entry.insert(0, get_val('duration', '0'))
+            dur_entry.pack(fill="x", pady=5)
+            self.widgets['duration'] = dur_entry
 
         elif choice == "set_volume":
             # Target
@@ -522,6 +654,10 @@ class SubActionDialog(ctk.CTkToplevel):
                 res['target'] = self.widgets['target'].get()
             if 'mode' in self.widgets:
                 res['mode'] = self.widgets['mode'].get()
+            if 'state' in self.widgets:
+                res['state'] = self.widgets['state'].get()
+            if 'duration' in self.widgets:
+                 res['duration'] = int(self.widgets['duration'].get())
                 
             if 'value_slider' in self.widgets:
                 # Convert 0-100 slider to 0.0-1.0 for backend
@@ -560,8 +696,10 @@ class TriggerDialog(ctk.CTkToplevel):
         # Create friendly display names mapping
         trigger_types = [
             ("twitch_command", "Twitch: Chat-Befehl (!command)"),
+            ("youtube_command", "YouTube: Chat-Befehl (!command)"),
             ("twitch_raid", "Twitch: Raid empfangen"),
             ("twitch_sub", "Twitch: Neuer Subscriber"),
+            ("twitch_redemption", "Twitch: Kanalpunkt-Einl\xF6sung"),
             ("timer", "Timer (Intervall)"),
             ("obs_scene", "OBS: Szene gewechselt")
         ]
@@ -581,6 +719,14 @@ class TriggerDialog(ctk.CTkToplevel):
         # --- DYNAMIC CONFIG FRAME ---
         self.config_frame = ctk.CTkFrame(self)
         self.config_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # --- PERMISSION (Conditional) ---
+        self.frame_perm = ctk.CTkFrame(self.config_frame, fg_color="transparent")
+        ctk.CTkLabel(self.frame_perm, text="Permission:").pack(anchor="w")
+        self.perm_var = ctk.StringVar(value="Everyone")
+        self.perm_combo = ctk.CTkComboBox(self.frame_perm, variable=self.perm_var, 
+                                          values=["Everyone", "Subscriber", "VIP", "Moderator", "Broadcaster"])
+        self.perm_combo.pack(fill="x", pady=5)
         
         self.entry_var = ctk.StringVar()
         self.lbl_config = ctk.CTkLabel(self.config_frame, text="Command (!cmd):")
@@ -603,16 +749,25 @@ class TriggerDialog(ctk.CTkToplevel):
         # But if editing, restore value
         val = ""
         if self.initial_data and self.initial_data.get('type') == internal_type:
-             if internal_type == "twitch_command": val = self.initial_data.get('command', '')
+             if internal_type == "twitch_command": 
+                 val = self.initial_data.get('command', '')
+                 self.perm_var.set(self.initial_data.get('permission', 'Everyone'))
+             elif internal_type == "youtube_command": val = self.initial_data.get('command', '')
              elif internal_type == "twitch_raid": val = str(self.initial_data.get('min_viewers', 0))
              elif internal_type == "timer": val = str(self.initial_data.get('interval', 60))
              elif internal_type == "obs_scene": val = self.initial_data.get('scene_name', '')
+             elif internal_type == "twitch_redemption": val = self.initial_data.get('reward_title', '')
              
         self.entry_var.set(val)
 
         if internal_type == "twitch_command":
             self.lbl_config.configure(text="Befehlsname (z.B. !start):")
             self.entry_config.configure(state="normal")
+            self.frame_perm.pack(fill="x", pady=5)
+        elif internal_type == "youtube_command":
+            self.lbl_config.configure(text="Befehlsname (z.B. !start):")
+            self.entry_config.configure(state="normal")
+            self.frame_perm.pack_forget()
         elif internal_type == "twitch_raid":
             self.lbl_config.configure(text="Min. Zuschauer:")
             self.entry_config.configure(state="normal")
@@ -626,6 +781,13 @@ class TriggerDialog(ctk.CTkToplevel):
         elif internal_type == "obs_scene":
             self.lbl_config.configure(text="Szenenname:")
             self.entry_config.configure(state="normal")
+            self.frame_perm.pack_forget()
+        elif internal_type == "twitch_redemption":
+            self.lbl_config.configure(text="Exakter Belohnungs-Titel:")
+            self.entry_config.configure(state="normal")
+            self.frame_perm.pack_forget()
+        else:
+             self.frame_perm.pack_forget()
 
     def on_ok(self):
         # Map back from display name to internal type
@@ -638,12 +800,18 @@ class TriggerDialog(ctk.CTkToplevel):
         if t_type == "twitch_command":
             if not val.startswith("!"): val = "!" + val
             data['command'] = val
+            data['permission'] = self.perm_var.get()
+        elif t_type == "youtube_command":
+            if not val.startswith("!"): val = "!" + val
+            data['command'] = val
         elif t_type == "twitch_raid":
             data['min_viewers'] = int(val) if val.isdigit() else 0
         elif t_type == "timer":
             data['interval'] = int(val) if val.isdigit() else 60
         elif t_type == "obs_scene":
             data['scene_name'] = val
+        elif t_type == "twitch_redemption":
+            data['reward_title'] = val
             
         self.result = data
         self.destroy()

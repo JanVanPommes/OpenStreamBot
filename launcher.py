@@ -10,6 +10,7 @@ import queue
 import time
 from tkinter import messagebox
 from interface.gui_actions import ActionEditorFrame
+from interface.gui_rewards import RewardEditorFrame
 from core.profile_manager import ProfileManager
 from PIL import Image
 import signal
@@ -31,7 +32,7 @@ ctk.set_default_color_theme("blue")
 CONFIG_FILE = "config.yaml"
 # Nutze nun den internen Webserver statt Datei-Pfad
 DASHBOARD_URL = "http://localhost:8000/interface/dashboard.html"
-VERSION = "0.2.2"
+VERSION = "0.3.0"
 
 class ConsoleRedirector:
     def __init__(self, text_widget, queue):
@@ -50,7 +51,7 @@ class App(ctk.CTk):
 
         self.title("OpenStreamBot Launcher")
         self.geometry("1280x720")
-        self.minsize(1280, 720)
+        self.minsize(900, 600)
 
         self.bot_process = None
         self.log_queue = queue.Queue()
@@ -98,7 +99,9 @@ class App(ctk.CTk):
         )
         self.logo_label.grid(row=1, column=0, padx=20, pady=(0, 10))
 
-        self.sidebar_button_1 = ctk.CTkButton(self.sidebar_frame, text="Dashboard", command=self.show_dashboard_frame)
+        self.logo_label.grid(row=1, column=0, padx=20, pady=(0, 10))
+
+        self.sidebar_button_1 = ctk.CTkButton(self.sidebar_frame, text="Control Center", command=self.show_dashboard_frame)
         self.sidebar_button_1.grid(row=2, column=0, padx=20, pady=10)
         
         self.sidebar_button_2 = ctk.CTkButton(self.sidebar_frame, text="Settings", command=self.show_settings_frame)
@@ -107,17 +110,20 @@ class App(ctk.CTk):
         self.sidebar_button_3 = ctk.CTkButton(self.sidebar_frame, text="Accounts", command=self.show_accounts_frame)
         self.sidebar_button_3.grid(row=4, column=0, padx=20, pady=10)
 
+        self.sidebar_button_rewards = ctk.CTkButton(self.sidebar_frame, text="Rewards", command=self.show_rewards_frame)
+        self.sidebar_button_rewards.grid(row=5, column=0, padx=20, pady=10)
+
         self.sidebar_button_4 = ctk.CTkButton(self.sidebar_frame, text="Actions Editor", command=self.show_actions_frame)
-        self.sidebar_button_4.grid(row=5, column=0, padx=20, pady=10)
+        self.sidebar_button_4.grid(row=6, column=0, padx=20, pady=10)
 
         self.sidebar_button_5 = ctk.CTkButton(self.sidebar_frame, text="Profiles", command=self.show_profiles_frame)
-        self.sidebar_button_5.grid(row=6, column=0, padx=20, pady=10)
+        self.sidebar_button_5.grid(row=7, column=0, padx=20, pady=10)
 
         self.status_label = ctk.CTkLabel(self.sidebar_frame, text="Status: Bot Offline", text_color="gray")
-        self.status_label.grid(row=7, column=0, padx=20, pady=(10, 0))
+        self.status_label.grid(row=8, column=0, padx=20, pady=(10, 0))
 
         self.obs_status_label = ctk.CTkLabel(self.sidebar_frame, text="OBS: Offline", text_color="gray")
-        self.obs_status_label.grid(row=8, column=0, padx=20, pady=(0, 20))
+        self.obs_status_label.grid(row=9, column=0, padx=20, pady=(0, 20))
 
         # Start status monitoring thread
         self.status_thread = threading.Thread(target=self.status_monitor, daemon=True)
@@ -131,9 +137,9 @@ class App(ctk.CTk):
         self.setup_settings_frame()
         self.accounts_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.setup_accounts_frame()
-        self.accounts_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.setup_accounts_frame()
         self.actions_frame = ActionEditorFrame(self) # New Editor Frame
+        self.rewards_frame = RewardEditorFrame(self) # New Rewards Frame
         self.profiles_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.setup_profiles_frame()
 
@@ -388,6 +394,7 @@ class App(ctk.CTk):
         self.settings_frame.grid_forget()
         self.accounts_frame.grid_forget()
         self.actions_frame.grid_forget()
+        self.rewards_frame.grid_forget()
         self.profiles_frame.grid_forget()
         self.dashboard_frame.grid(row=0, column=1, sticky="nsew")
 
@@ -395,6 +402,7 @@ class App(ctk.CTk):
         self.dashboard_frame.grid_forget()
         self.accounts_frame.grid_forget()
         self.actions_frame.grid_forget()
+        self.rewards_frame.grid_forget()
         self.profiles_frame.grid_forget()
         self.settings_frame.grid(row=0, column=1, sticky="nsew")
         self.load_config_to_ui()
@@ -403,6 +411,7 @@ class App(ctk.CTk):
         self.dashboard_frame.grid_forget()
         self.settings_frame.grid_forget()
         self.actions_frame.grid_forget()
+        self.rewards_frame.grid_forget()
         self.profiles_frame.grid_forget()
         self.accounts_frame.grid(row=0, column=1, sticky="nsew")
         self.update_account_status()
@@ -411,14 +420,26 @@ class App(ctk.CTk):
         self.dashboard_frame.grid_forget()
         self.settings_frame.grid_forget()
         self.accounts_frame.grid_forget()
+        self.rewards_frame.grid_forget()
         self.profiles_frame.grid_forget()
         self.actions_frame.grid(row=0, column=1, sticky="nsew")
+
+    def show_rewards_frame(self):
+        self.dashboard_frame.grid_forget()
+        self.settings_frame.grid_forget()
+        self.accounts_frame.grid_forget()
+        self.actions_frame.grid_forget()
+        self.profiles_frame.grid_forget()
+        self.rewards_frame.grid(row=0, column=1, sticky="nsew")
+        self.rewards_frame.load_creds() # Refresh creds if changed
+        self.rewards_frame.refresh_rewards() # Refresh list
 
     def show_profiles_frame(self):
         self.dashboard_frame.grid_forget()
         self.settings_frame.grid_forget()
         self.accounts_frame.grid_forget()
         self.actions_frame.grid_forget()
+        self.rewards_frame.grid_forget()
         self.profiles_frame.grid(row=0, column=1, sticky="nsew")
         self.refresh_profile_list()
 

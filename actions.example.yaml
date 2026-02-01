@@ -1,5 +1,6 @@
 actions:
-- enabled: true
+- cooldown: 60
+  enabled: true
   group: Commands
   name: Discord
   sub_actions:
@@ -8,7 +9,8 @@ actions:
   triggers:
   - command: '!dc'
     type: twitch_command
-- enabled: true
+- cooldown: 60
+  enabled: true
   group: Commands
   name: Youtube
   sub_actions:
@@ -17,7 +19,8 @@ actions:
   triggers:
   - command: '!yt'
     type: twitch_command
-- enabled: true
+- cooldown: 60
+  enabled: true
   group: Commands
   name: Bot
   sub_actions:
@@ -26,7 +29,8 @@ actions:
   triggers:
   - command: '!bot'
     type: twitch_command
-- enabled: true
+- cooldown: 0
+  enabled: true
   group: Automation
   name: Music Pause
   sub_actions:
@@ -34,34 +38,28 @@ actions:
     folder: /mnt/C65E9C4D5E9C37DF/Musik Artlist
     type: playlist
     volume: '50'
-  - action_name: testshort
-    type: trigger_action
+  - action_name: Shorts Timer
+    duration: 0
+    state: 'on'
+    type: set_action_state
   triggers:
   - scene_name: Pause
     type: obs_scene
-- enabled: true
+- cooldown: 0
+  enabled: true
   group: Automation
   name: Music Stop
   sub_actions:
   - type: stop_playlist
+  - action_name: Shorts Timer
+    duration: 0
+    state: 'off'
+    type: set_action_state
   triggers:
   - scene_name: In-Game
     type: obs_scene
-- enabled: true
-  group: test
-  name: testshort
-  sub_actions:
-  - ms: 50000
-    type: delay
-  - type: youtube_random_short
-  - ms: 100000
-    type: delay
-  - type: youtube_random_short
-  - ms: 100000
-    type: delay
-  - type: youtube_random_short
-  triggers: []
-- enabled: true
+- cooldown: 0
+  enabled: true
   group: Automation
   name: Musik Start
   sub_actions:
@@ -72,7 +70,8 @@ actions:
   triggers:
   - scene_name: Stream Starting
     type: obs_scene
-- enabled: true
+- cooldown: 0
+  enabled: true
   group: test
   name: Shoutout
   sub_actions:
@@ -81,4 +80,38 @@ actions:
     type: twitch_chat
   triggers:
   - command: '!shout %user%'
+    permission: Moderator
     type: twitch_command
+- cooldown: 60
+  enabled: true
+  group: Commands
+  name: Sonja
+  sub_actions:
+  - message: Folgt meiner Frau! https://www.twitch.tv/sonja_van_pommes
+    type: twitch_chat
+  triggers:
+  - command: '!sonja'
+    type: twitch_command
+- cooldown: 60
+  enabled: true
+  group: Commands
+  name: Szenario
+  sub_actions:
+  - message: Hier gibts den Prototyp vom Szenario! https://steamcommunity.com/sharedfiles/filedetails/?id=3654797778
+    type: twitch_chat
+  - ms: 2000
+    type: delay
+  - message: "und hier die Survival Mod die das m\xF6glich macht: https://steamcommunity.com/sharedfiles/filedetails/?id=3654796446"
+    type: twitch_chat
+  triggers:
+  - command: '!steam'
+    type: twitch_command
+- cooldown: 0
+  enabled: false
+  group: Automation
+  name: Shorts Timer
+  sub_actions:
+  - type: youtube_random_short
+  triggers:
+  - interval: 120
+    type: timer

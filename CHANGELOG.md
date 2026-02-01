@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.3.0 Beta] - 2026-02-01
+### WICHTIG / IMPORTANT
+- **Twitch Login**: Bitte lösche die Datei `token_twitch.json` und melde dich neu an! Es wurden neue Berechtigungen (Scopes) für Kanalpunkte und Follower hinzugefügt.
+- **Twitch Login**: Please delete `token_twitch.json` and login again! New scopes for Channel Points and Followers have been added.
+
+### Neu / New
+- **User Permissions**: Aktionen können nun auf bestimmte Nutzergruppen beschränkt werden (Broadcaster, Moderator, VIP, Subscriber).
+  - Actions can now be restricted to specific user roles.
+- **HotSwitch**: Aktionen können nun "on-the-fly" aktiviert/deaktiviert werden, ohne den Bot neu zu starten.
+  - Actions can now be toggled on/off instantly without restart.
+- **Timer Management**: Timer starten/stoppen nun automatisch, wenn die zugehörige Aktion aktiviert/deaktiviert wird.
+  - Timers now start/stop automatically when their action is toggled.
+- **Action State Sub-Action**: Neue Sub-Action zum automatischen Aktivieren/Deaktivieren anderer Aktionen (mit optionalem Timer).
+  - New Sub-Action to enable/disable other actions automatically (with optional duration).
+- **Channel Points Manager**: Neuer Tab zum Verwalten von Kanalpunkt-Belohnungen (Erstellen, Bearbeiten, Löschen).
+  - New tab to manage Channel Points Rewards.
+- **Twitch Trigger**: Auslösen von Aktionen bei Kanalpunkt-Einlösungen.
+  - Trigger actions on Channel Point Redemptions.
+- **YouTube Chat Trigger**: Separater Trigger für YouTube Chat Befehle.
+  - Distinct trigger for YouTube Chat commands.
+- **Action Cooldown**: Aktionen können nun eine Abklingzeit (Cooldown) haben.
+  - Actions can now have a cooldown.
+- **Window Resizing**: Das Fenster kann nun kleiner gezogen werden (min. 900x600).
+  - Window minimum size reduced to 900x600.
+- **Update Safety**: `actions.yaml` wird nicht mehr überschrieben. Neue Scopes werden automatisch geprüft.
+  - `actions.yaml` is safe from overwrites.
+
+### Fixes
+- **YouTube Shorts**: Sync-Fehler und Abspiel-Bug behoben.
+- **Scrolling**: Mausrad-Scrollen in der Belohnungsliste behoben.
+- **Twitch Scopes**: Fehlende Berechtigung für Kanalpunkte hinzugefügt.
+
+
 ## [0.2.2 Beta] - 2026-01-21
 ### Fixed
 - **Update Loop**: Bumped version to `0.2.2` to resolve an issue where the launcher constantly requested an update.

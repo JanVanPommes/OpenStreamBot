@@ -24,6 +24,8 @@ class ActionEngine:
         self.current_audio_device = None # Tracks current mixer device
         self.current_playlist_sound = None # Tracks currently playing Sound object
         
+        self.cooldowns = {} # Map action_name -> last_run_ts
+
         # Volume Control (0.0 - 1.0)
         self.vol_sfx = 1.0
         self.vol_playlist = 1.0
@@ -37,6 +39,17 @@ class ActionEngine:
 
     def load_actions(self):
         self.stop_timers()
+        
+        # Initialize from example if missing
+        if not os.path.exists(self.config_file):
+            if os.path.exists("actions.example.yaml"):
+                import shutil
+                try:
+                    shutil.copy("actions.example.yaml", self.config_file)
+                    print("[ActionEngine] actions.yaml initialized from example.")
+                except Exception as e:
+                    print(f"[ActionEngine] Error initializing actions.yaml: {e}")
+        
         if not os.path.exists(self.config_file):
             self.actions = []
             return
@@ -46,29 +59,64 @@ class ActionEngine:
             self.actions = data.get('actions', [])
         
         print(f"[ActionEngine] Loaded {len(self.actions)} actions.")
+        self.timer_tasks = {} # Use dict for management {name: task}
         self.start_timers()
 
     def stop_timers(self):
-        for t in self.timer_tasks:
-            t.cancel()
-        self.timer_tasks.clear()
+        if isinstance(self.timer_tasks, list): # Legacy support during migration (init is list)
+            for t in self.timer_tasks: t.cancel()
+            self.timer_tasks = {}
+        else:
+            for t in self.timer_tasks.values():
+                t.cancel()
+            self.timer_tasks.clear()
 
     def start_timers(self):
         for action in self.actions:
             if not action.get('enabled', True): continue
+            self._start_action_timer(action)
+
+    def _start_action_timer(self, action):
+        for trigger in action.get('triggers', []):
+             if trigger.get('type') == 'timer':
+                 interval = trigger.get('interval', 60)
+                 # Cancel existing if any (restart logic)
+                 if action['name'] in self.timer_tasks:
+                     self.timer_tasks[action['name']].cancel()
+                     
+                 task = asyncio.create_task(self.run_timer(action, interval))
+                 self.timer_tasks[action['name']] = task
+                 print(f"[Timer] Started for {action['name']} ({interval}s)")
+
+    def _update_action_state(self, action_name, new_state):
+        target = next((a for a in self.actions if a.get('name') == action_name), None)
+        if not target: return False
+        
+        old_state = target.get('enabled', True)
+        if old_state != new_state:
+            target['enabled'] = new_state
+            print(f"[ActionEngine] State Change: '{action_name}' -> {'ENABLED' if new_state else 'DISABLED'}")
+            self.save_actions()
             
-            for trigger in action.get('triggers', []):
-                 if trigger.get('type') == 'timer':
-                     interval = trigger.get('interval', 60)
-                     # Start Timer Task
-                     task = asyncio.create_task(self.run_timer(action, interval))
-                     self.timer_tasks.append(task)
+            # Timer Management
+            if new_state:
+                self._start_action_timer(target)
+            else:
+                if action_name in self.timer_tasks:
+                    self.timer_tasks[action_name].cancel()
+                    del self.timer_tasks[action_name]
+                    print(f"[Timer] Stopped for {action_name}")
+            
+            return True
+        return False
 
     async def run_timer(self, action, interval):
         try:
             while True:
                 await asyncio.sleep(interval)
-                # Execute
+                # Execute (Timers ignore cooldown currently? Or should they respect it? 
+                # Ideally timers ARE the schedule, so ignore cooldown usually.
+                # But let's keep it simple.)
                 print(f"[Timer] Executing {action['name']}")
                 asyncio.create_task(self.execute_action(action, {}))
         except asyncio.CancelledError:
@@ -85,14 +133,25 @@ class ActionEngine:
         Main entry point for triggers.
         Checks if any action matches the event type and data.
         """
+        now = time.time()
         for action in self.actions:
             if not action.get('enabled', True):
                 continue
-                
+            
+            # --- COOLDOWN CHECK ---
+            cd = action.get('cooldown', 0)
+            if cd > 0:
+                last_run = self.cooldowns.get(action['name'], 0)
+                if now - last_run < cd:
+                    continue # Valid cooldown
+                       
             triggers = action.get('triggers', [])
             for trigger in triggers:
                 is_triggered, ctx_updates = self.check_trigger(trigger, event_type, data)
                 if is_triggered:
+                    # Update Cooldown
+                    if cd > 0: self.cooldowns[action['name']] = now
+                    
                     print(f"[ActionEngine] Trigger fired: {action['name']} (Event: {event_type})")
                     
                     # Merge context
@@ -114,6 +173,16 @@ class ActionEngine:
             if event == "YouTubeEnded":
                 print("[ActionEngine] Shorts ended. Restoring volume.")
                 await self.restore_ducking()
+            elif event == "reload_actions":
+                print("[ActionEngine] Reload requested via WS.")
+                self.load_actions()
+            elif event == "set_action_state":
+                payload = data.get("data", {})
+                a_name = payload.get("action")
+                state = payload.get("state") # boolean
+                
+                self._update_action_state(a_name, state)
+                
                 
         except Exception as e:
             print(f"[ActionEngine] WS Message Error: {e}")
@@ -133,19 +202,59 @@ class ActionEngine:
         mapped_type = event_type
         
         if event_type == "CommandTriggered":
-            mapped_type = "twitch_command"
+            if data.get('platform') == 'youtube':
+                mapped_type = "youtube_command"
+            else:
+                mapped_type = "twitch_command"
         elif event_type == "SystemEvent":
              if data.get("type") == "raid": mapped_type = "twitch_raid"
              elif data.get("type") == "sub": mapped_type = "twitch_sub"
+        elif event_type == "TwitchRedemption":
+            mapped_type = "twitch_redemption"
         
         # Check Type
         if trigger_config.get('type') != mapped_type:
             return False, {}
             
         # Condition Check
-        if mapped_type == "twitch_command": # Use mapped_type instead of event_type
+        
+        # --- REDEMPTION ---
+        if mapped_type == "twitch_redemption":
+            req_title = trigger_config.get('reward_title', '').lower()
+            evt_title = data.get('reward_title', '').lower()
+            
+            if req_title == evt_title:
+                return True, {
+                    "user": data.get('user', ''),
+                    "input": data.get('input', '')
+                }
+            return False, {}
+
+        # --- COMMANDS (Twitch & YouTube) ---
+        if mapped_type in ["twitch_command", "youtube_command"]:
             trigger_cmd = trigger_config.get('command', '').lower()
             received_cmd = data.get('command', '').lower()
+            
+            # --- Permission Check (Only Twitch for now) ---
+            if mapped_type == "twitch_command":
+                req_perm = trigger_config.get('permission', 'Everyone')
+                allowed = True
+                is_bc = data.get('is_broadcaster', False)
+                is_mod = data.get('is_mod', False)
+                is_vip = data.get('is_vip', False)
+                is_sub = data.get('is_subscriber', False)
+                
+                if req_perm == "Broadcaster":
+                    if not is_bc: allowed = False
+                elif req_perm == "Moderator":
+                    if not (is_bc or is_mod): allowed = False
+                elif req_perm == "VIP":
+                    if not (is_bc or is_mod or is_vip): allowed = False
+                elif req_perm == "Subscriber":
+                    if not (is_bc or is_mod or is_vip or is_sub): allowed = False
+                    
+                if not allowed:
+                    return False, {}
             
             # 1. Simple Match
             if trigger_cmd == received_cmd:
@@ -342,6 +451,34 @@ class ActionEngine:
                  asyncio.create_task(self.execute_action(found, ctx))
             else:
                  print(f"[Action] Trigger target '{target_name}' not found.")
+
+        # --- SET ACTION STATE ---
+        elif sa_type == "set_action_state":
+            target_name = config.get('action_name', '')
+            state = config.get('state', 'toggle') # on, off, toggle
+            duration = int(config.get('duration', 0))
+            
+            target = next((a for a in self.actions if a.get('name') == target_name), None)
+            
+            if target:
+                old_state = target.get('enabled', True)
+                new_state = old_state
+                
+                if state == "on": new_state = True
+                elif state == "off": new_state = False
+                elif state == "toggle": new_state = not old_state
+                
+                if self._update_action_state(target_name, new_state):
+                    # Duration Timer
+                    if duration > 0:
+                        async def revert():
+                            await asyncio.sleep(duration)
+                            self._update_action_state(target_name, old_state)
+                            print(f"[Action] Timer expired. Action '{target_name}' reverted.")
+                        
+                        asyncio.create_task(revert())
+            else:
+                print(f"[Action] Action '{target_name}' not found.")
 
         # --- VOLUME CONTROL ---
         elif sa_type == "set_volume":

@@ -1,6 +1,6 @@
 # OpenStreamBot
 
-**Version:** 0.2.1 Beta  
+**Version:** 0.3.0 Beta  
 **A Multi-Platform Stream Bot for Twitch & YouTube**
 
 OpenStreamBot is an open-source bot for streamers that integrates Twitch and YouTube, can control OBS Studio, and offers a flexible action system. Perfect for creators who want to automate and make their streams more interactive.
@@ -195,14 +195,15 @@ The action system allows you to create custom commands and reactions:
 6. **"Save Actions"**
 
 Now `!fanfare` in chat will play the sound! 🎺
-174: 
-175: ### New in 0.1.1:
-176: - **Profiles**: Use the **Profiles** tab in the launcher to save your current config as a named profile (e.g. "Gaming", "Just Chatting") and switch between them.
-177: - **Audio Devices**: In `play_sound` or `playlist` actions, you can now select a specific audio output device.
-178: - **Playlist**: Add a `playlist` sub-action, select a music folder, and the bot will play random songs from it continuously. Stop it with `stop_playlist`.
-179: - **Timer**: Use the `timer` trigger to run actions every X seconds (e.g. for chat announcements).
-180: 
-181: ### More Possibilities:
+### New in 0.3.0 Beta:
+- **Instant HotSwitch**: Toggle actions on/off instantly without restarting.
+- **User Permissions**: Restrict commands to Mods, VIPs, Subs, etc.
+- **Channel Points Manager**: Manage Twitch Rewards directly in the bot.
+- **Twitch Redemptions**: Trigger actions when viewers redeem Channel Points.
+- **Timer Management**: Timers start/stop automatically with their actions.
+- **Action Cooldowns**: Set cooldowns for commands to prevent spam.
+- **YouTube Chat Trigger**: Specific trigger for YouTube chat commands.
+- **Window Resizing**: Minimum window size reduced for better fit.
 
 ### More Possibilities:
 - **Switch OBS scene** on specific commands

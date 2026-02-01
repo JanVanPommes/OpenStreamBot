@@ -351,6 +351,10 @@ class YouTubeBot:
                     }
                 }
             }
+            req = self.youtube.liveChatMessages().insert(
+                part="snippet",
+                body=body
+            )
             self.quota.consume(50)
             await asyncio.to_thread(req.execute)
             print(f"[YouTube -> Chat] {message_text}")
@@ -374,6 +378,10 @@ class YouTubeBot:
                     return 0
 
             # 1. Get Uploads Playlist ID
+            req = self.youtube.channels().list(
+                mine=True,
+                part='contentDetails'
+            )
             self.quota.consume(1)
             resp = await asyncio.to_thread(req.execute)
             uploads_playlist_id = resp['items'][0]['contentDetails']['relatedPlaylists']['uploads']
@@ -386,6 +394,12 @@ class YouTubeBot:
             fetched_count = 0
             
             while True:
+                pl_req = self.youtube.playlistItems().list(
+                    playlistId=uploads_playlist_id,
+                    part="contentDetails",
+                    maxResults=50,
+                    pageToken=next_token
+                )
                 self.quota.consume(1)
                 pl_resp = await asyncio.to_thread(pl_req.execute)
                 
@@ -406,6 +420,10 @@ class YouTubeBot:
                     video_ids_buffer = video_ids_buffer[50:] # keep rest
                     
                     if batch:
+                        vid_req = self.youtube.videos().list(
+                            id=",".join(batch),
+                            part="contentDetails"
+                        )
                         self.quota.consume(1)
                         vid_resp = await asyncio.to_thread(vid_req.execute)
                         

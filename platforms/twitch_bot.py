@@ -1,4 +1,4 @@
-from twitchio.ext import commands
+from twitchio.ext import commands, pubsub
 import datetime
 import os
 import json
@@ -7,6 +7,7 @@ import webbrowser
 from core.auth import perform_twitch_oauth_flow, validate_twitch_token, refresh_twitch_token
 
 async def setup_twitch_token(config):
+    # ... (unchanged) ...
     """
     Handhabt den OAuth Flow für Twitch.
     Gibt einen gültigen Access Token zurück string.
@@ -99,6 +100,28 @@ class TwitchBot(commands.Bot):
         
         # Cache für Badges
         self.badge_map = {}
+        
+        # PubSub
+        self.pubsub = pubsub.PubSubPool(self)
+
+    async def event_pubsub_channel_points(self, event: pubsub.PubSubChannelPointsMessage):
+        """Wird aufgerufen wenn Channel Points eingelöst wurden"""
+        try:
+            print(f"[Twitch PubSub] Redemption: {event.reward.title} by {event.user.name}")
+            
+            data = {
+                "reward_title": event.reward.title,
+                "reward_cost": event.reward.cost,
+                "user": event.user.name,
+                "input": event.input,
+                "status": event.status, # FULFILLED or UNFULFILLED
+                "timestamp": str(datetime.datetime.now())
+            }
+            
+            await self.event_server.broadcast("TwitchRedemption", data)
+            
+        except Exception as e:
+            print(f"[Twitch PubSub Error] {e}")
 
     async def on_dashboard_message(self, raw_data):
         import json
@@ -114,8 +137,7 @@ class TwitchBot(commands.Bot):
                     print(f"[Dashboard -> Chat] {msg}")
             
             elif action == "get_badges":
-                # Sende Badges an alle (oder idealerweise nur an den neuen Client, 
-                # aber Broadcast ist für jetzt okay und einfacher)
+                # Sende Badges an alle
                 if self.badge_map:
                    await self.event_server.broadcast("BadgeMapping", self.badge_map)
                    print(f"[Dashboard] Badges angefordert und gesendet.")
@@ -138,6 +160,15 @@ class TwitchBot(commands.Bot):
             users = await self.fetch_users(names=[self.channel_name])
             if users:
                 channel_id = users[0].id
+                
+                # --- PUBSUB SUBSCRIBE ---
+                try:
+                    token = self._http.token.replace("oauth:", "")
+                    topics = [pubsub.channel_points(token)[int(channel_id)]]
+                    await self.pubsub.subscribe_topics(topics)
+                    print("[Twitch] PubSub für Channel Points abonniert.")
+                except Exception as e:
+                    print(f"[Twitch PubSub] Fehler beim Abonnieren: {e}")
                 
                 # Helper für API Calls
                 async def fetch_badges_api(url):
@@ -267,11 +298,26 @@ class TwitchBot(commands.Bot):
         elif message.tags and 'mod' in message.tags:
              is_mod = str(message.tags['mod']) == "1"
 
+        # Helper for roles
+        def has_badge(bid):
+            return any(b['id'] == bid for b in msg_badges)
+
+        is_broadcaster = has_badge('broadcaster')
+        is_subscriber = has_badge('subscriber') or has_badge('founder')
+        is_vip = has_badge('vip')
+        
+        # Mod is already checked but let's be consistent with badges too if needed, 
+        # though keep existing boolean as primary source if available.
+        # TwitchIO 'is_mod' is reliable.
+
         chat_data = {
             "platform": "twitch",
             "user": author_name,
             "message": message.content,
             "is_mod": is_mod,
+            "is_vip": is_vip,
+            "is_subscriber": is_subscriber,
+            "is_broadcaster": is_broadcaster,
             "color": color, 
             "timestamp": str(datetime.datetime.now()),
             "emotes": emotes,

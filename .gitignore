@@ -8,6 +8,8 @@ client_secret.json
 youtube_quota.json
 youtube_active_chat.json
 shorts_cache.json
+actions.yaml
+actions.bak
 
 # User Data
 profiles/
@@ -38,3 +40,5 @@ T Thumbs.db
 
 # Logs
 *.log
+shorts_cache.json
+.bot_status
