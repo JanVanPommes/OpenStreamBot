@@ -1,6 +1,6 @@
 # OpenStreamBot
 
-**Version:** 0.2.1 Beta  
+**Version:** 0.3.0 Beta  
 **Ein Multi-Plattform Stream-Bot für Twitch & YouTube**
 
 OpenStreamBot ist ein Open-Source-Bot für Streamer, der Twitch und YouTube integriert, OBS Studio steuern kann und ein flexibles Action-System bietet. Ideal für Creator, die ihre Streams automatisieren und interaktiver gestalten möchten.
@@ -195,14 +195,16 @@ Das Action-System ermöglicht es dir, eigene Befehle und Reaktionen zu erstellen
 6. **"Save Actions"**
 
 Ab jetzt wird bei `!fanfare` im Chat der Sound abgespielt! 🎺
-174: 
-175: ### Neu in 0.1.1:
-176: - **Profile**: Nutze den **Profile**-Tab im Launcher, um deine aktuelle Konfiguration als benanntes Profil (z.B. "Gaming", "Just Chatting") zu speichern und zu wechseln.
-177: - **Audio-Geräte**: In `play_sound` oder `playlist` Aktionen kannst du nun ein spezifisches Audio-Ausgabegerät wählen.
-178: - **Playlist**: Füge eine `playlist` Sub-Action hinzu, wähle einen Musikordner, und der Bot spielt zufällig Songs daraus ab. Stop mit `stop_playlist`.
-179: - **Timer**: Nutze den `timer` Trigger, um Aktionen alle X Sekunden auszuführen (z.B. für Chat-Ankündigungen).
-180: 
-181: ### Weitere Möglichkeiten:
+
+### Neu in 0.3.0 Beta:
+- **Instant HotSwitch**: Aktionen sofort an/ausschalten ohne Neustart.
+- **User Permissions**: Befehle auf Mods, VIPs, Subs etc. beschränken.
+- **Channel Points Manager**: Kanalpunkt-Belohnungen direkt im Bot verwalten.
+- **Twitch Redemptions**: Aktionen auslösen, wenn Zuschauer Kanalpunkte einlösen.
+- **Timer Management**: Timer starten/stoppen automatisch mit ihrer Aktion.
+- **Action Cooldowns**: Cooldowns für Befehle setzen (Vermeidet Spam).
+- **YouTube Chat Trigger**: Eigener Trigger für YouTube Chat Befehle.
+- **Window Resizing**: Fenster kann nun kleiner gezogen werden (min. 900x600).
 
 ### Weitere Möglichkeiten:
 - **OBS-Szene wechseln** bei bestimmten Commands
