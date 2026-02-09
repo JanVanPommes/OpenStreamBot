@@ -98,6 +98,9 @@ class TwitchBot(commands.Bot):
         # Callback registrieren für ausgehende Nachrichten vom Dashboard
         self.event_server.add_message_handler(self.on_dashboard_message)
         
+        self.is_ready = False
+        self.channel_id = None
+        self._joined_channels = []
         # Cache für Badges
         self.badge_map = {}
         
@@ -115,13 +118,99 @@ class TwitchBot(commands.Bot):
                 "user": event.user.name,
                 "input": event.input,
                 "status": event.status, # FULFILLED or UNFULFILLED
-                "timestamp": str(datetime.datetime.now())
+                "timestamp": str(datetime.datetime.now()),
+                "redemption_id": event.id,
+                "reward_id": event.reward.id
             }
             
             await self.event_server.broadcast("TwitchRedemption", data)
             
         except Exception as e:
             print(f"[Twitch PubSub Error] {e}")
+
+    async def refund_redemption(self, redemption_id, reward_id):
+        """Erstattet eine Kanalpunkte-Einlösung (Status -> CANCELED)"""
+        if not self.channel_id: 
+            print("[Twitch Refund] Kein Channel ID vorhanden.")
+            return
+
+        try:
+            print(f"[Twitch] Erstatte Reward (ID: {redemption_id})...")
+            headers = {
+                "Client-Id": self._http.client_id,
+                "Authorization": f"Bearer {self._http.token.replace('oauth:', '')}",
+                "Content-Type": "application/json"
+            }
+            url = f"https://api.twitch.tv/helix/channel_points/custom_rewards/redemptions?broadcaster_id={self.channel_id}&reward_id={reward_id}&id={redemption_id}"
+            
+            body = {"status": "CANCELED"}
+            
+            async with self._http.session.patch(url, headers=headers, json=body) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    # data['data'][0]['status'] should be 'CANCELED'
+                    print(f"[Twitch Refund] Erfolgreich erstattet.")
+                else:
+                    text = await resp.text()
+                    print(f"[Twitch Refund] Fehler: {resp.status} - {text}")
+        except Exception as e:
+            print(f"[Twitch Refund] Exception: {e}")
+
+    async def update_reward_cooldown(self, reward_id, cooldown_seconds):
+        """Setzt den Global Cooldown eines Rewards"""
+        if not self.channel_id: return
+
+        try:
+            headers = {
+                "Client-Id": self._http.client_id,
+                "Authorization": f"Bearer {self._http.token.replace('oauth:', '')}",
+                "Content-Type": "application/json"
+            }
+            url = f"https://api.twitch.tv/helix/channel_points/custom_rewards?broadcaster_id={self.channel_id}&id={reward_id}"
+            
+            is_enabled = cooldown_seconds > 0
+            body = {
+                "is_global_cooldown_enabled": is_enabled,
+                "global_cooldown_seconds": cooldown_seconds
+            }
+            
+            async with self._http.session.patch(url, headers=headers, json=body) as resp:
+                if resp.status == 200:
+                    print(f"[Twitch Sync] Cooldown für Reward {reward_id} auf {cooldown_seconds}s gesetzt.")
+                else:
+                    text = await resp.text()
+                    print(f"[Twitch Sync] Fehler {resp.status} für Reward {reward_id}: {text}")
+        except Exception as e:
+            print(f"[Twitch Sync] Exception: {e}")
+
+    async def sync_cooldowns(self, actions):
+        """Synchronisiert die Cooldowns der Actions mit den Twitch Rewards"""
+        print("[Twitch Sync] Starte Cooldown-Synchronisation...")
+        
+        # 1. Lade aktuelle Reward Map (Title -> ID)
+        rewards = await self.fetch_custom_rewards()
+        if not rewards: 
+            print("[Twitch Sync] Keine Rewards gefunden/geladen. Abbruch.")
+            return
+            
+        title_to_id = {r['title'].lower(): r['id'] for r in rewards}
+        
+        # 2. Iteriere Actions
+        for action in actions:
+            if not action.get('enabled', True): continue
+            
+            cooldown = action.get('cooldown', 0)
+            
+            for trigger in action.get('triggers', []):
+                if trigger.get('type') == 'twitch_redemption':
+                    reward_title = trigger.get('reward_title', '').lower()
+                    
+                    if reward_title in title_to_id:
+                        reward_id = title_to_id[reward_title]
+                        # Set Cooldown
+                        await self.update_reward_cooldown(reward_id, cooldown)
+                    else:
+                        print(f"[Twitch Sync] WARNUNG: Reward '{reward_title}' nicht in Twitch-Liste gefunden.")
 
     async def on_dashboard_message(self, raw_data):
         import json
@@ -142,17 +231,16 @@ class TwitchBot(commands.Bot):
                    await self.event_server.broadcast("BadgeMapping", self.badge_map)
                    print(f"[Dashboard] Badges angefordert und gesendet.")
 
+            elif action == "refresh_rewards":
+                await self.fetch_custom_rewards()
+
         except Exception as e:
             print(f"[Error] Failed to process dashboard message: {e}")
 
     async def event_ready(self):
         # Wird ausgeführt, wenn der Login erfolgreich war
-        self.is_ready = True
         print(f"[Twitch] Eingeloggt als {self.nick}")
         print(f"[Twitch] Verbunden mit Kanal: {self.channel_name}")
-        
-        # Sende Status an WebSocket (z.B. für ein Dashboard)
-        await self.event_server.broadcast("BotStatus", {"status": "Connected", "platform": "Twitch"})
         
         # --- BADGES LADEN ---
         try:
@@ -207,10 +295,61 @@ class TwitchBot(commands.Bot):
                 print(f"[Twitch] Badges geladen: {len(badge_map)} Sets")
                 await self.event_server.broadcast("BadgeMapping", badge_map)
                 
+                # 5. Store Channel ID for other methods
+                self.channel_id = channel_id
+                
+                # 6. Fetch Rewards
+                await self.fetch_custom_rewards()
+                
+                # 7. DONE - Now declare ready
+                self.is_ready = True
+                
+                # Sende Status an WebSocket (z.B. für ein Dashboard & ActionEngine Sync)
+                await self.event_server.broadcast("BotStatus", {"status": "Connected", "platform": "Twitch"})
+
         except Exception as e:
-            print(f"[Twitch] Fehler beim Laden der Badges: {e}")
+            print(f"[Twitch] Fehler beim Laden der Badges/Init: {e}")
             import traceback
             traceback.print_exc()
+
+    async def fetch_custom_rewards(self):
+        """Holt alle Custom Rewards vom Kanal und speichert sie."""
+        if not self.channel_id: return
+
+        try:
+            print("[Twitch] Abrufen der Kanalpunkte-Rewards...")
+            # TwitchIO hat keine direkte Methode, wir nutzen die API Session
+            headers = {
+                "Client-Id": self._http.client_id,
+                "Authorization": f"Bearer {self._http.token.replace('oauth:', '')}"
+            }
+            url = f"https://api.twitch.tv/helix/channel_points/custom_rewards?broadcaster_id={self.channel_id}"
+            
+            async with self._http.session.get(url, headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    rewards = data.get('data', [])
+                    
+                    # Speichern
+                    simplified = []
+                    for r in rewards:
+                        simplified.append({
+                            "title": r['title'],
+                            "id": r['id'],
+                            "cost": r['cost']
+                        })
+                    
+                    with open("available_rewards.json", "w") as f:
+                        json.dump(simplified, f)
+                        
+                    print(f"[Twitch] {len(simplified)} Rewards gespeichert.")
+                    # Broadcast update event to dashboard/GUI
+                    await self.event_server.broadcast("RewardsUpdated", simplified)
+                    return simplified
+                else:
+                    print(f"[Twitch API] Fehler beim Abrufen der Rewards: {resp.status}")
+        except Exception as e:
+            print(f"[Twitch API] Fehler fetch_custom_rewards: {e}")
 
     async def get_user_last_game(self, username):
         """
@@ -292,7 +431,7 @@ class TwitchBot(commands.Bot):
              if c: color = c
         
         # Mod Status Check
-        is_mod = True # Default fallback
+        is_mod = False # Default fallback
         if message.author: 
             is_mod = message.author.is_mod
         elif message.tags and 'mod' in message.tags:
@@ -339,7 +478,11 @@ class TwitchBot(commands.Bot):
             await self.event_server.broadcast("CommandTriggered", {
                 "command": cmd_name, 
                 "user": author_name,
-                "message": message.content
+                "message": message.content,
+                "is_mod": is_mod,
+                "is_vip": is_vip,
+                "is_subscriber": is_subscriber,
+                "is_broadcaster": is_broadcaster
             })
 
         # 6. TwitchIO Command System (Hardcoded commands)

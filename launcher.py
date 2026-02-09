@@ -603,11 +603,13 @@ class App(ctk.CTk):
                   python_exe = sys.executable
                   
              cmd = [python_exe, "-u", "main.py"]
+             base_dir = os.path.dirname(os.path.abspath(__file__))
         
         try:
             # Start process properly
             self.bot_process = subprocess.Popen(
                 cmd,
+                cwd=base_dir,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

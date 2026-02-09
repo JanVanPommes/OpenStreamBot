@@ -61,6 +61,10 @@ class ActionEngine:
         print(f"[ActionEngine] Loaded {len(self.actions)} actions.")
         self.timer_tasks = {} # Use dict for management {name: task}
         self.start_timers()
+        
+        # Trigger Twitch Sync if bot is ready
+        if self.twitch and hasattr(self.twitch, 'is_ready') and self.twitch.is_ready:
+            asyncio.create_task(self.twitch.sync_cooldowns(self.actions))
 
     def stop_timers(self):
         if isinstance(self.timer_tasks, list): # Legacy support during migration (init is list)
@@ -134,34 +138,73 @@ class ActionEngine:
         Checks if any action matches the event type and data.
         """
         now = time.time()
+    async def handle_event(self, event_type, data):
+        """
+        Main entry point for triggers.
+        Checks if any action matches the event type and data.
+        """
+        # --- SYSTEM EVENTS ---
+        if event_type == "BotStatus" and self.twitch:
+            if data.get("platform") == "Twitch" and data.get("status") == "Connected":
+                 print("[ActionEngine] Twitch Connected. Triggering Cooldown Sync...")
+                 asyncio.create_task(self.twitch.sync_cooldowns(self.actions))
+            return # System events usually don't trigger actions directly (?) unless configured
+
+        now = time.time()
         for action in self.actions:
             if not action.get('enabled', True):
                 continue
             
-            # --- COOLDOWN CHECK ---
-            cd = action.get('cooldown', 0)
-            if cd > 0:
-                last_run = self.cooldowns.get(action['name'], 0)
-                if now - last_run < cd:
-                    continue # Valid cooldown
-                       
             triggers = action.get('triggers', [])
+            matched_trigger = None
+            ctx_updates = None
+            
+            # 1. Check if ANY trigger matches this event
             for trigger in triggers:
-                is_triggered, ctx_updates = self.check_trigger(trigger, event_type, data)
+                is_triggered, updates = self.check_trigger(trigger, event_type, data)
                 if is_triggered:
-                    # Update Cooldown
-                    if cd > 0: self.cooldowns[action['name']] = now
-                    
-                    print(f"[ActionEngine] Trigger fired: {action['name']} (Event: {event_type})")
-                    
-                    # Merge context
-                    full_ctx = data.copy() if data else {}
-                    if ctx_updates:
-                        full_ctx.update(ctx_updates)
+                    matched_trigger = trigger
+                    ctx_updates = updates
+                    break
+            
+            if matched_trigger:
+                # 2. Check Cooldown
+                cd = action.get('cooldown', 0)
+                is_on_cooldown = False
+                if cd > 0:
+                    last_run = self.cooldowns.get(action['name'], 0)
+                    if now - last_run < cd:
+                        is_on_cooldown = True
 
-                    # Execute async
-                    asyncio.create_task(self.execute_action(action, full_ctx))
-                    break # One trigger per action is enough
+                if is_on_cooldown:
+                    print(f"[ActionEngine] Action '{action['name']}' blocked by cooldown ({cd}s).")
+                    
+                    # --- REFUND LOGIC ---
+                    # Check if this was a Twitch Redemption trigger
+                    # We need to map the event type or check the trigger type
+                    # The mapped type logic is inside check_trigger, but we know event_type
+                    if event_type == "TwitchRedemption" and self.twitch:
+                        redemption_id = data.get('redemption_id')
+                        reward_id = data.get('reward_id')
+                        if redemption_id and reward_id:
+                            print(f"[ActionEngine] Refunding Twitch Points for '{action['name']}'...")
+                            asyncio.create_task(self.twitch.refund_redemption(redemption_id, reward_id))
+                    
+                    continue # Skip execution
+                
+                # 3. Execute
+                if cd > 0: self.cooldowns[action['name']] = now
+                
+                print(f"[ActionEngine] Trigger fired: {action['name']} (Event: {event_type})")
+                
+                # Merge context
+                full_ctx = data.copy() if data else {}
+                if ctx_updates:
+                    full_ctx.update(ctx_updates)
+
+                # Execute async
+                asyncio.create_task(self.execute_action(action, full_ctx))
+                break # One trigger per action is enough
 
     async def on_ws_message(self, message):
         """Handle incoming WebSocket messages from Overlay"""
@@ -182,7 +225,6 @@ class ActionEngine:
                 state = payload.get("state") # boolean
                 
                 self._update_action_state(a_name, state)
-                
                 
         except Exception as e:
             print(f"[ActionEngine] WS Message Error: {e}")

@@ -5,6 +5,16 @@ import os
 import pygame._sdl2.audio as sdl_audio
 import pygame
 
+def get_ws_url():
+    port = 8080 # Default fallback
+    if os.path.exists("config.yaml"):
+        try:
+            with open("config.yaml", "r") as f:
+                cfg = yaml.safe_load(f)
+                port = cfg.get('server', {}).get('port', 8080)
+        except: pass
+    return f"ws://localhost:{port}"
+
 class ActionEditorFrame(ctk.CTkFrame):
     def __init__(self, master, config_file="actions.yaml"):
         super().__init__(master)
@@ -118,7 +128,7 @@ class ActionEditorFrame(ctk.CTkFrame):
             import json
             async def send():
                 try:
-                    async with websockets.connect("ws://localhost:8000") as ws:
+                    async with websockets.connect(get_ws_url()) as ws:
                         await ws.send(json.dumps({"event": "reload_actions"}))
                         print("Reload signal sent.")
                 except Exception as e:
@@ -149,7 +159,7 @@ class ActionEditorFrame(ctk.CTkFrame):
             import json
             async def send():
                 try:
-                    async with websockets.connect("ws://localhost:8000") as ws:
+                    async with websockets.connect(get_ws_url()) as ws:
                         payload = {
                             "event": "set_action_state", 
                             "data": {
@@ -783,26 +793,94 @@ class TriggerDialog(ctk.CTkToplevel):
             self.entry_config.configure(state="normal")
             self.frame_perm.pack_forget()
         elif internal_type == "twitch_redemption":
-            self.lbl_config.configure(text="Exakter Belohnungs-Titel:")
-            self.entry_config.configure(state="normal")
+            self.lbl_config.configure(text="Belohnungs-Titel:")
+            self.entry_config.pack_forget() # Hide default entry
+            
+            # Helper: Load Rewards
+            def load_rewards():
+                import os, json
+                if os.path.exists("available_rewards.json"):
+                    try:
+                        with open("available_rewards.json", "r") as f:
+                            data = json.load(f)
+                            return [r['title'] for r in data]
+                    except: return []
+                return []
+            
+            rewards = load_rewards()
+            if not rewards and val: rewards = [val] # Keep current if file empty
+            if not rewards: rewards = ["(Keine geladen - Refresh drücken)"]
+            
+            self.reward_var = ctk.StringVar(value=val if val in rewards else rewards[0] if rewards else "")
+            self.combo_rewards = ctk.CTkComboBox(self.config_frame, variable=self.reward_var, values=rewards)
+            self.combo_rewards.pack(fill="x", padx=10, pady=5)
+            
+            # Refresh Button
+            def refresh_rewards():
+                # 1. Send WS command
+                import asyncio, websockets, json, threading
+                
+                def run():
+                    async def send():
+                        try:
+                            # Assuming Port 8000 as per other methods
+                            async with websockets.connect(get_ws_url()) as ws:
+                                await ws.send(json.dumps({
+                                    "action": "refresh_rewards",
+                                    "source": "gui_refresh"
+                                }))
+                        except: pass
+                    
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(send())
+                    loop.close()
+                
+                threading.Thread(target=run).start()
+                
+                # 2. Wait a bit then reload
+                self.btn_refresh.configure(text="Lade...", state="disabled")
+                self.after(2000, lambda: reload_ui())
+                
+            def reload_ui():
+                new_rewards = load_rewards()
+                if new_rewards:
+                    self.combo_rewards.configure(values=new_rewards)
+                    self.combo_rewards.set(new_rewards[0])
+                self.btn_refresh.configure(text="↻ Liste aktualisieren", state="normal")
+            
+            self.btn_refresh = ctk.CTkButton(self.config_frame, text="↻ Liste aktualisieren", command=refresh_rewards)
+            self.btn_refresh.pack(pady=5)
+            
             self.frame_perm.pack_forget()
         else:
              self.frame_perm.pack_forget()
+        
+        # Restore entry if not redemption (generic fallback)
+        if internal_type != "twitch_redemption":
+            if self.entry_config not in self.config_frame.pack_slaves():
+                 self.entry_config.pack(fill="x", padx=10, pady=5)
+                 if hasattr(self, 'combo_rewards'): self.combo_rewards.pack_forget()
+                 if hasattr(self, 'btn_refresh'): self.btn_refresh.pack_forget()
 
     def on_ok(self):
         # Map back from display name to internal type
         display_name = self.type_var.get()
         t_type = self.type_mapping.get(display_name, "twitch_command")
+        
+        # Value source depends on type now
         val = self.entry_var.get()
+        if t_type == "twitch_redemption" and hasattr(self, 'reward_var'):
+            val = self.reward_var.get()
         
         data = {'type': t_type}
         
         if t_type == "twitch_command":
-            if not val.startswith("!"): val = "!" + val
+            if val and not val.startswith("!"): val = "!" + val
             data['command'] = val
             data['permission'] = self.perm_var.get()
         elif t_type == "youtube_command":
-            if not val.startswith("!"): val = "!" + val
+            if val and not val.startswith("!"): val = "!" + val
             data['command'] = val
         elif t_type == "twitch_raid":
             data['min_viewers'] = int(val) if val.isdigit() else 0

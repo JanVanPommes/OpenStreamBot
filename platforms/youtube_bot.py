@@ -138,6 +138,8 @@ class YouTubeBot:
                 broadcastStatus="active", # Suche nur nach aktiven Streams
                 broadcastType="all"
             )
+            # Kosten: list(1) + snippet(2) + status(2) = 5 Units... MOMENT, list kostet 100 laut User!
+            # Wir gehen auf Nummer sicher und nehmen 100.
             self.quota.consume(100)
             resp = await asyncio.to_thread(req.execute)
             
@@ -216,6 +218,11 @@ class YouTubeBot:
                     if os.path.exists(self.chat_cache_file):
                         os.remove(self.chat_cache_file)
                     break
+                elif "invalid_grant" in err_str:
+                    print("[YouTube] Token ungültig/abgelaufen. Erzwinge Re-Auth...")
+                    self.creds = None # Trigger Re-Auth in start() loop
+                    self.live_chat_id = None
+                    break
                 else:
                     print(f"[YouTube] Polling Error: {e}")
                 
@@ -271,17 +278,17 @@ class YouTubeBot:
     async def start(self):
         self.is_running = True
         
-        # 1. Login
+        # 1. Login (Initial)
+        # We do this check inside the loop now too, but good to fail fast if config is wrong
         if not await self.authenticate():
-            print("[YouTube] Start abgebrochen.")
-            return
+            print("[YouTube] Initial-Start abgebrochen (Auth fehlgeschlagen). Versuche es im Loop erneut...")
+            # Don't return, let the loop retry
 
         # 2. Caching: Versuche gecachte Chat-ID
         if os.path.exists(self.chat_cache_file):
             try:
                 with open(self.chat_cache_file, 'r') as f:
                     cached = json.load(f)
-                    # Wenn Cache jünger als 12 Stunden, versuchen wir es
                     if time.time() - cached.get("timestamp", 0) < 43200:
                         print(f"[YouTube] Verwende gecachte Chat ID: {cached['chat_id']}")
                         self.live_chat_id = cached['chat_id']
@@ -290,27 +297,45 @@ class YouTubeBot:
 
         # 3. Stream Loop
         while self.is_running:
+            # Auto-Auth Check
+            if not self.creds or not self.creds.valid:
+                print("[YouTube] Prüfe Authentifizierung...")
+                if not await self.authenticate():
+                    print("[YouTube] Auth fehlgeschlagen. Warte 60s...")
+                    for _ in range(60):
+                        if not self.is_running: break
+                        await asyncio.sleep(1)
+                    continue
+
             if self.live_chat_id:
                 # Starte Polling Loop
                 await self.poll_chat()
                 # Wenn poll_chat returned, ist der Stream wohl vorbei oder Error
                 self.live_chat_id = None
             
-            # Wartezeit vor nächstem Check oder manuellem Start
-            # Wir checken nur noch alle 10 Minuten automatisch, um Quota zu sparen
-            # Der User soll den manuellen Start Button im Dashboard nutzen.
-            print("[YouTube] Warte auf manuellen Start oder nächsten Auto-Check (10 Min)...")
+            # Wartezeit vor nächsten Checks
+            # Wir checken alle 5 Minuten (300s) um Quota zu sparen (100 cost per check)
+            print("[YouTube] Kein aktiver Stream. Warte auf manuellen Start oder Auto-Check (5 Min)...")
             
-            # Use smaller steps to allow faster interrupt
-            for _ in range(600):
+            for _ in range(300):
                 if not self.is_running or self.live_chat_id: break
                 await asyncio.sleep(1)
             
             if self.is_running and not self.live_chat_id:
-                # Auto-Discovery (Backup, falls Dashboard nicht genutzt wird)
-                chat_id = await self.find_active_broadcast()
-                if chat_id:
-                    self.live_chat_id = chat_id
+                # Safety Quota Check before Auto-Discovery
+                # 100 units per search. 6000 per hour if we check every minute.
+                # Daily limit 10,000.
+                # So we can't check every minute if we run 24/7.
+                # Logic: Check only if quota is healthy (>50% left?)
+                # Or just rely on Manual Start mostly?
+                # User wants "Reconnect".
+                # Let's check if quota is fine.
+                if self.quota.consumed < 8000:
+                    chat_id = await self.find_active_broadcast()
+                    if chat_id:
+                        self.live_chat_id = chat_id
+                else:
+                    print(f"[YouTube] Quota hoch ({self.quota.consumed}). Überspringe Auto-Discovery.")
                 
     async def stop(self):
         self.is_running = False
