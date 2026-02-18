@@ -391,7 +391,7 @@ class YouTubeBot:
     async def sync_shorts_cache(self):
         """Builds a local cache of videos <= 60s."""
         print("[YouTube] Starting Shorts Sync (this may take a moment)...")
-        cache_file = "shorts_cache.json"
+        cache_file = "shorts_available.json" # Renamed from shorts_cache.json
         shorts_ids = []
         
         try:
@@ -473,21 +473,54 @@ class YouTubeBot:
             return 0
 
     def get_random_short(self):
-        """Returns a random cached video ID. Triggers sync if empty."""
-        cache_file = "shorts_cache.json"
+        """Returns a random cached video ID (History aware)."""
+        available_file = "shorts_available.json"
         
-        if not os.path.exists(cache_file):
+        # Legacy migration: rename old cache if exists
+        if os.path.exists("shorts_cache.json") and not os.path.exists(available_file):
+            print("[YouTube] Migrating old cache file...")
+            os.rename("shorts_cache.json", available_file)
+
+        if not os.path.exists(available_file):
              print("[YouTube] Cache empty, please sync first! (Returning None)")
              return None
              
         try:
-            with open(cache_file, 'r') as f:
-                ids = json.load(f)
+            # 1. Load Available
+            with open(available_file, 'r') as f:
+                available_ids = json.load(f)
             
-            if not ids: return None
-            return random.choice(ids)
+            if not available_ids: return None
+
+            # 2. Load History
+            history_file = "shorts_history.json"
+            history_ids = []
+            if os.path.exists(history_file):
+                with open(history_file, 'r') as f:
+                    history_ids = json.load(f)
             
-        except:
+            # 3. Filter
+            candidates = [vid for vid in available_ids if vid not in history_ids]
+            
+            # 4. Reset if empty
+            if not candidates:
+                print("[YouTube] History full! Resetting history to play all shorts again.")
+                candidates = available_ids
+                history_ids = [] # Clear memory history
+                # Will overwrite file on save
+            
+            # 5. Pick
+            choice = random.choice(candidates)
+            
+            # 6. Update History
+            history_ids.append(choice)
+            with open(history_file, 'w') as f:
+                json.dump(history_ids, f)
+            
+            return choice
+            
+        except Exception as e:
+            print(f"[YouTube] Error picking short: {e}")
             return None
             
     def _is_short(self, duration_iso):

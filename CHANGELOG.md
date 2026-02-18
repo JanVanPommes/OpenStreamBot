@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.3.2 Beta] - 2026-02-18
+### Added
+- **First Words Trigger**: New trigger type (`twitch_first_message`) that fires only on the first message of a user in the current session. Can be restricted to a specific user.
+- **Twitch Clips**: New sub-action (`twitch_create_clip`) to create a clip of the stream. Includes option to post the clip link to chat.
+- **Probability**: Sub-actions can now have a probability (0-100%) of executing. Useful for random sound effects or events.
+- **C# Code Execution**: New sub-action (`execute_csharp`) to run external scripts or programs.
+    - **Modes**: Project (`.csproj`), Script (`.csx`), Executable (`.exe`), and **Direct Code Input** (with built-in editor).
+    - **Variables**: Scripts can return data to the bot using `SetVar: key=value`.
+    - **Example**: Added `scripts/counter.csx` showcasing persistent variables.
+- **GUI Improvements**:
+    - `SubActionDialog` is now larger and scrollable to accommodate complex configurations.
+    - Added visible version number to the Launcher sidebar.
+- **Twitch Auth Update**: Improved token handling to better preserve `refresh_token` across restarts.
+
+### Fixed
+- **First Words Logic**: Fixed a bug where the user filter for the First Words trigger was ignored.
+- **UI Overflow**: Fixed an issue where the "Save" button in the SubActionDialog was hidden for actions with many options.
+- **C# Execution**: Fixed `dotnet-script` not being found on Linux by automatically adding `~/.dotnet/tools` to PATH.
+
+## [0.3.1 Beta] - 2026-02-09
+### Fixed
+- **Twitch Rewards List**: Fixed an issue where the list of available Channel Points rewards was not loading in the Action Editor.
+- **WebSocket Port Mismatch**: Fixed a clearer bug where the GUI tried to connect on port 8000 even if the bot was configured for 8080 (or other ports).
+- **Twitch Cooldown Handling**: 
+    - Implemented **Native Cooldown Sync**: Actions with a cooldown now automatically update the corresponding Twitch Reward to have a Global Cooldown, preventing users from redeeming it while it's unavailable.
+    - Added **Automatic Refund**: As a fallback, if a redemption still goes through during a cooldown (race condition), the points are automatically refunded to the user.
+- **Bot Startup**: Fixed a race condition where the bot would signal "Ready" before it had fully loaded channel information.
+
 ## [0.3.0 Beta] - 2026-02-01
 ### WICHTIG / IMPORTANT
 - **Twitch Login**: Bitte lösche die Datei `token_twitch.json` und melde dich neu an! Es wurden neue Berechtigungen (Scopes) für Kanalpunkte und Follower hinzugefügt.

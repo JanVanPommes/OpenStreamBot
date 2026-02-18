@@ -16,19 +16,34 @@ class OBSController:
         self.loop = asyncio.get_event_loop()
 
     def connect(self):
+        if self.is_connected:
+             return
+
         try:
             # Standard Request Client
-            self.client = obs.ReqClient(host=self.host, port=self.port, password=self.password)
+            self.client = obs.ReqClient(host=self.host, port=self.port, password=self.password, timeout=3)
             self.is_connected = True
             print(f"[OBS] Connected to {self.host}:{self.port}")
             
             # Add Event Client for Triggers in separate thread
-            self.event_thread = threading.Thread(target=self._run_event_client, daemon=True)
-            self.event_thread.start()
+            if not hasattr(self, 'event_thread') or not self.event_thread.is_alive():
+                self.event_thread = threading.Thread(target=self._run_event_client, daemon=True)
+                self.event_thread.start()
             
         except Exception as e:
-            print(f"[OBS] Connection failed: {e}")
+            # print(f"[OBS] Connection failed: {e}") # Reduce log spam
             self.is_connected = False
+            self.client = None
+
+    def disconnect(self):
+        self.is_connected = False
+        if self.client:
+            try:
+                self.client.disconnect()
+            except:
+                pass
+        self.client = None
+
 
     def _run_event_client(self):
         """Internal method to run EventClient in a thread"""

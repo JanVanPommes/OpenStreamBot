@@ -42,3 +42,6 @@ T Thumbs.db
 *.log
 shorts_cache.json
 .bot_status
+
+# Generated Data
+counter_*.txt

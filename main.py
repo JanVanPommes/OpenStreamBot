@@ -123,7 +123,10 @@ async def main():
     if 'obs' not in cfg: cfg['obs'] = {'host': 'localhost', 'port': 4455, 'password': ''}
     
     obs_ctrl = OBSController(cfg['obs'], ws_server)
-    obs_ctrl.connect() # Non-blocking initial connect attempt
+    obs_ctrl = OBSController(cfg['obs'], ws_server)
+    # Don't block on initial connect, just init
+    # obs_ctrl.connect() 
+
     
     # Action Engine initialization
     action_engine = ActionEngine("actions.yaml", ws_server, obs_ctrl)
@@ -221,7 +224,16 @@ async def main():
                 pass
             await asyncio.sleep(2)
 
+    # OBS Auto-Reconnect Task
+    async def obs_reconnector():
+        while True:
+            if 'obs_ctrl' in locals() and obs_ctrl:
+                if not obs_ctrl.is_connected:
+                    obs_ctrl.connect()
+            await asyncio.sleep(5)
+
     tasks.append(asyncio.create_task(status_reporter()))
+    tasks.append(asyncio.create_task(obs_reconnector()))
     print("--- OpenStreamBot läuft (STRG+C zum Beenden) ---")
     
     try:

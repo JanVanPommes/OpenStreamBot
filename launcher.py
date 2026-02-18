@@ -32,7 +32,7 @@ ctk.set_default_color_theme("blue")
 CONFIG_FILE = "config.yaml"
 # Nutze nun den internen Webserver statt Datei-Pfad
 DASHBOARD_URL = "http://localhost:8000/interface/dashboard.html"
-VERSION = "0.3.0"
+VERSION = "0.3.2"
 
 class ConsoleRedirector:
     def __init__(self, text_widget, queue):
@@ -124,6 +124,10 @@ class App(ctk.CTk):
 
         self.obs_status_label = ctk.CTkLabel(self.sidebar_frame, text="OBS: Offline", text_color="gray")
         self.obs_status_label.grid(row=9, column=0, padx=20, pady=(0, 20))
+
+        # Version Label
+        self.version_label = ctk.CTkLabel(self.sidebar_frame, text=f"v{VERSION}", text_color="gray40", font=ctk.CTkFont(size=10))
+        self.version_label.grid(row=10, column=0, padx=20, pady=(0, 10), sticky="s")
 
         # Start status monitoring thread
         self.status_thread = threading.Thread(target=self.status_monitor, daemon=True)

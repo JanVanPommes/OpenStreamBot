@@ -413,7 +413,7 @@ class SubActionDialog(ctk.CTkToplevel):
     def __init__(self, parent, initial_data=None):
         super().__init__(parent)
         self.title("Edit Sub-Action" if initial_data else "Add Sub-Action")
-        self.geometry("400x350")
+        self.geometry("450x600")
         self.result = None
         self.initial_data = initial_data or {}
         
@@ -424,8 +424,9 @@ class SubActionDialog(ctk.CTkToplevel):
         
         self.type_var = ctk.StringVar(value=start_type)
         
+        
         # Sort and unique
-        sub_types = sorted(list(set(["twitch_chat", "delay", "log", "play_sound", "stop_sounds", "playlist", "stop_playlist", "obs_set_scene", "youtube_random_short", "trigger_action", "set_volume", "set_action_state"])))
+        sub_types = sorted(list(set(["twitch_chat", "delay", "log", "play_sound", "stop_sounds", "playlist", "stop_playlist", "obs_set_scene", "youtube_random_short", "trigger_action", "set_volume", "set_action_state", "twitch_create_clip", "execute_csharp"])))
         
         self.combo = ctk.CTkComboBox(self, variable=self.type_var, 
                                      values=sub_types,
@@ -433,11 +434,29 @@ class SubActionDialog(ctk.CTkToplevel):
         self.combo.pack(pady=5)
         
         # --- DYNAMIC FRAME ---
-        self.frame_config = ctk.CTkFrame(self)
+        self.frame_config = ctk.CTkScrollableFrame(self)
         self.frame_config.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Holders for widgets
         self.widgets = {}
+        
+        # --- PROBABILITY (Common for all) ---
+        self.frame_prob = ctk.CTkFrame(self, fg_color="transparent")
+        self.frame_prob.pack(fill="x", padx=10, pady=(0, 10))
+        
+        ctk.CTkLabel(self.frame_prob, text="Probability:").pack(side="left")
+        
+        self.lbl_prob = ctk.CTkLabel(self.frame_prob, text="100%", width=40)
+        self.lbl_prob.pack(side="right")
+        
+        def update_prob(val):
+            self.lbl_prob.configure(text=f"{int(val)}%")
+            
+        init_prob = float(self.initial_data.get('probability', 1.0)) * 100
+        self.prob_slider = ctk.CTkSlider(self.frame_prob, from_=0, to=100, number_of_steps=100, command=update_prob)
+        self.prob_slider.set(init_prob)
+        self.prob_slider.pack(fill="x", padx=5)
+        update_prob(init_prob) # Set initial label
         
         # OK Button
         ctk.CTkButton(self, text="Save" if initial_data else "Add", command=self.on_ok).pack(pady=10)
@@ -628,6 +647,17 @@ class SubActionDialog(ctk.CTkToplevel):
             lbl_val = ctk.CTkLabel(self.frame_config, text=f"{int(init_val)}%")
             lbl_val.pack(anchor="n")
 
+        elif choice == "twitch_create_clip":
+             ctk.CTkLabel(self.frame_config, text="Post Clip link to Chat?").pack(anchor="w")
+             # Default True
+             post_var = ctk.BooleanVar(value=True)
+             if self.initial_data and choice == self.initial_data.get('type'):
+                  post_var.set(self.initial_data.get('post_to_chat', True))
+                  
+             chk = ctk.CTkCheckBox(self.frame_config, text="Yes", variable=post_var)
+             chk.pack(pady=5)
+             self.widgets['post_to_chat'] = post_var
+
     def browse_folder(self, entry_widget):
         folder = filedialog.askdirectory()
         if folder:
@@ -668,6 +698,8 @@ class SubActionDialog(ctk.CTkToplevel):
                 res['state'] = self.widgets['state'].get()
             if 'duration' in self.widgets:
                  res['duration'] = int(self.widgets['duration'].get())
+            if 'post_to_chat' in self.widgets:
+                 res['post_to_chat'] = self.widgets['post_to_chat'].get()
                 
             if 'value_slider' in self.widgets:
                 # Convert 0-100 slider to 0.0-1.0 for backend
@@ -681,6 +713,350 @@ class SubActionDialog(ctk.CTkToplevel):
                 res['volume'] = str(int(self.widgets['volume_slider'].get()))
             elif 'volume' in self.widgets:
                 res['volume'] = self.widgets['volume'].get()
+                
+            # Probability
+            if hasattr(self, 'prob_slider'):
+                 prob = float(self.prob_slider.get()) / 100.0
+                 res['probability'] = f"{prob:.2f}"
+                
+        except ValueError:
+            messagebox.showerror("Error", "Invalid numeric value!")
+            return
+
+        self.result = res
+        self.destroy()
+
+    def on_type_change(self, choice):
+        # Clear old widgets
+        for w in self.frame_config.winfo_children(): w.destroy()
+        self.widgets = {}
+        
+        # Helper to set value if editing and types match
+        def get_val(key, default=""):
+            if self.initial_data and self.initial_data.get('type') == choice:
+                 return str(self.initial_data.get(key, default))
+            return default
+
+        # Helper for Device Dropdown
+        def add_device_selector():
+            ctk.CTkLabel(self.frame_config, text="Audio Device:").pack(anchor="w")
+            
+            # Get Devices
+            try:
+                if not pygame.get_init(): pygame.init()
+                devices = ['Default'] + sdl_audio.get_audio_device_names(False)
+            except:
+                devices = ['Default']
+                
+            dev_var = ctk.StringVar(value=get_val('device', 'Default'))
+            combo = ctk.CTkComboBox(self.frame_config, variable=dev_var, values=devices)
+            combo.pack(fill="x", pady=5)
+            self.widgets['device'] = dev_var
+
+        if choice == "twitch_chat":
+            ctk.CTkLabel(self.frame_config, text="Chat Message:").pack(anchor="w")
+            entry = ctk.CTkEntry(self.frame_config)
+            entry.insert(0, get_val('message'))
+            entry.pack(fill="x", pady=5)
+            self.widgets['message'] = entry
+            
+        elif choice == "log":
+             ctk.CTkLabel(self.frame_config, text="Log Message:").pack(anchor="w")
+             entry = ctk.CTkEntry(self.frame_config)
+             entry.insert(0, get_val('message'))
+             entry.pack(fill="x", pady=5)
+             self.widgets['message'] = entry
+             
+        elif choice == "delay":
+            ctk.CTkLabel(self.frame_config, text="Term (ms):").pack(anchor="w")
+            entry = ctk.CTkEntry(self.frame_config)
+            entry.insert(0, get_val('ms', '1000'))
+            entry.pack(fill="x", pady=5)
+            self.widgets['ms'] = entry
+
+        elif choice == "play_sound":
+            ctk.CTkLabel(self.frame_config, text="Sound File:").pack(anchor="w")
+            f_frame = ctk.CTkFrame(self.frame_config, fg_color="transparent")
+            f_frame.pack(fill="x")
+            
+            entry = ctk.CTkEntry(f_frame)
+            entry.insert(0, get_val('file'))
+            entry.pack(side="left", fill="x", expand=True)
+            self.widgets['file'] = entry
+            
+            btn = ctk.CTkButton(f_frame, text="...", width=30, command=lambda: self.browse_file(entry))
+            btn.pack(side="right", padx=5)
+            
+            add_device_selector()
+            
+            ctk.CTkLabel(self.frame_config, text="Volume (0-100%):").pack(anchor="w", pady=(10,0))
+            
+            def update_vol_lbl(val):
+                lbl_vol.configure(text=f"{int(val)}%")
+                
+            init_vol = float(get_val('volume', '100'))
+            
+            slider = ctk.CTkSlider(self.frame_config, from_=0, to=100, number_of_steps=100, command=update_vol_lbl)
+            slider.set(init_vol)
+            slider.pack(fill="x", pady=5)
+            self.widgets['volume_slider'] = slider
+            
+            lbl_vol = ctk.CTkLabel(self.frame_config, text=f"{int(init_vol)}%")
+            lbl_vol.pack(anchor="n")
+
+        elif choice == "playlist":
+            ctk.CTkLabel(self.frame_config, text="Music Folder:").pack(anchor="w")
+            f_frame = ctk.CTkFrame(self.frame_config, fg_color="transparent")
+            f_frame.pack(fill="x")
+            
+            entry = ctk.CTkEntry(f_frame)
+            entry.insert(0, get_val('folder'))
+            entry.pack(side="left", fill="x", expand=True)
+            self.widgets['folder'] = entry
+            
+            btn = ctk.CTkButton(f_frame, text="...", width=30, command=lambda: self.browse_folder(entry))
+            btn.pack(side="right", padx=5)
+            
+            add_device_selector()
+            
+            # Volume Slider for Playlist
+            ctk.CTkLabel(self.frame_config, text="Volume (0-100%):").pack(anchor="w", pady=(10,0))
+            
+            def update_vol_lbl(val):
+                lbl_vol.configure(text=f"{int(val)}%")
+                
+            init_vol = float(get_val('volume', '100'))
+            
+            slider = ctk.CTkSlider(self.frame_config, from_=0, to=100, number_of_steps=100, command=update_vol_lbl)
+            slider.set(init_vol)
+            slider.pack(fill="x", pady=5)
+            self.widgets['volume_slider'] = slider
+            
+            lbl_vol = ctk.CTkLabel(self.frame_config, text=f"{int(init_vol)}%")
+            lbl_vol.pack(anchor="n")
+
+        elif choice == "obs_set_scene":
+            ctk.CTkLabel(self.frame_config, text="Scene Name:").pack(anchor="w")
+            entry = ctk.CTkEntry(self.frame_config)
+            entry.insert(0, get_val('scene'))
+            entry.pack(fill="x", pady=5)
+            self.widgets['scene'] = entry
+            
+        elif choice == "youtube_random_short":
+             ctk.CTkLabel(self.frame_config, text="No configuration needed.\nMake sure to 'Sync Shorts' in 'Accounts' tab!").pack(pady=10)
+
+        elif choice == "trigger_action":
+            ctk.CTkLabel(self.frame_config, text="Action Name to Trigger:").pack(anchor="w")
+            
+            # Get Action Names
+            action_names = sorted([a.get('name', 'Untitled') for a in self.master.actions])
+            
+            act_var = ctk.StringVar(value=get_val('action_name'))
+            combo = ctk.CTkComboBox(self.frame_config, variable=act_var, values=action_names)
+            combo.pack(fill="x", pady=5)
+            self.widgets['action_name'] = act_var
+
+        elif choice == "set_action_state":
+            ctk.CTkLabel(self.frame_config, text="Target Action Name:").pack(anchor="w")
+            
+            # Get Action Names
+            action_names = sorted([a.get('name', 'Untitled') for a in self.master.actions])
+            
+            act_var = ctk.StringVar(value=get_val('action_name'))
+            combo = ctk.CTkComboBox(self.frame_config, variable=act_var, values=action_names)
+            combo.pack(fill="x", pady=5)
+            self.widgets['action_name'] = act_var
+            
+            ctk.CTkLabel(self.frame_config, text="New State:").pack(anchor="w")
+            state_var = ctk.StringVar(value=get_val('state', 'toggle'))
+            ctk.CTkComboBox(self.frame_config, variable=state_var, values=['on', 'off', 'toggle']).pack(fill="x", pady=5)
+            self.widgets['state'] = state_var
+            
+            ctk.CTkLabel(self.frame_config, text="Duration (seconds, 0=permanent):").pack(anchor="w")
+            dur_entry = ctk.CTkEntry(self.frame_config)
+            dur_entry.insert(0, get_val('duration', '0'))
+            dur_entry.pack(fill="x", pady=5)
+            self.widgets['duration'] = dur_entry
+
+        elif choice == "set_volume":
+            # Target
+            ctk.CTkLabel(self.frame_config, text="Target:").pack(anchor="w")
+            t_var = ctk.StringVar(value=get_val('target', 'sfx'))
+            ctk.CTkComboBox(self.frame_config, variable=t_var, values=['sfx', 'playlist']).pack(fill="x", pady=5)
+            self.widgets['target'] = t_var
+            
+            # Mode
+            ctk.CTkLabel(self.frame_config, text="Mode:").pack(anchor="w")
+            m_var = ctk.StringVar(value=get_val('mode', 'set'))
+            ctk.CTkComboBox(self.frame_config, variable=m_var, values=['set', 'adjust']).pack(fill="x", pady=5)
+            self.widgets['mode'] = m_var
+            
+            # Value
+            ctk.CTkLabel(self.frame_config, text="Value (0-100%):").pack(anchor="w")
+            
+            # Slider Logic
+            def update_val_lbl(val):
+                lbl_val.configure(text=f"{int(val)}%")
+                
+            init_val = float(get_val('value', '0.5'))
+            # Check if stored as 0-1 or 0-100
+            if init_val <= 1.0: init_val *= 100
+            
+            slider = ctk.CTkSlider(self.frame_config, from_=0, to=100, number_of_steps=100, command=update_val_lbl)
+            slider.set(init_val)
+            slider.pack(fill="x", pady=5)
+            self.widgets['value_slider'] = slider # Special key
+            
+            lbl_val = ctk.CTkLabel(self.frame_config, text=f"{int(init_val)}%")
+            lbl_val.pack(anchor="n")
+
+        elif choice == "twitch_create_clip":
+             ctk.CTkLabel(self.frame_config, text="Post Clip link to Chat?").pack(anchor="w")
+             # Default True
+             post_var = ctk.BooleanVar(value=True)
+             if self.initial_data and choice == self.initial_data.get('type'):
+                  post_var.set(self.initial_data.get('post_to_chat', True))
+                  
+             chk = ctk.CTkCheckBox(self.frame_config, text="Yes", variable=post_var)
+             chk.pack(pady=5)
+             self.widgets['post_to_chat'] = post_var
+
+        elif choice == "execute_csharp":
+             # Container for Mode Selection
+             ctk.CTkLabel(self.frame_config, text="Execution Mode:").pack(anchor="w")
+             
+             # Default to "File" if not set
+             current_mode = get_val('csharp_mode', 'File')
+             mode_var = ctk.StringVar(value=current_mode)
+             self.widgets['csharp_mode'] = mode_var
+             
+             def toggle_mode(value):
+                 mode_var.set(value)
+                 if value == "File":
+                     frame_file.pack(fill="x", pady=5)
+                     frame_code.pack_forget()
+                 else:
+                     frame_file.pack_forget()
+                     frame_code.pack(fill="both", expand=True, pady=5)
+                     
+             seg = ctk.CTkSegmentedButton(self.frame_config, values=["File", "Code"], command=toggle_mode)
+             seg.set(current_mode)
+             seg.pack(fill="x", pady=5)
+             
+             # --- FILE MODE ---
+             frame_file = ctk.CTkFrame(self.frame_config, fg_color="transparent")
+             
+             ctk.CTkLabel(frame_file, text="C# Source File (.cs / .csx / .csproj / .exe):").pack(anchor="w")
+             f_inner = ctk.CTkFrame(frame_file, fg_color="transparent")
+             f_inner.pack(fill="x")
+             
+             entry_path = ctk.CTkEntry(f_inner)
+             entry_path.insert(0, get_val('path'))
+             entry_path.pack(side="left", fill="x", expand=True)
+             self.widgets['path'] = entry_path
+             
+             btn = ctk.CTkButton(f_inner, text="...", width=30, command=lambda: self.browse_csharp(entry_path))
+             btn.pack(side="right", padx=5)
+             
+             # --- CODE MODE ---
+             frame_code = ctk.CTkFrame(self.frame_config, fg_color="transparent")
+             
+             ctk.CTkLabel(frame_code, text="Direct C# Script (Body of .csx):").pack(anchor="w")
+             txt_code = ctk.CTkTextbox(frame_code, height=400, font=("Consolas", 12))
+             txt_code.insert("0.0", get_val('code', 'Console.WriteLine("Hello from C#");'))
+             txt_code.pack(fill="both", expand=True)
+             self.widgets['code'] = txt_code
+             
+             # --- SHARED ARGS ---
+             ctk.CTkLabel(self.frame_config, text="Arguments (Optional):").pack(anchor="w", pady=(10,0))
+             entry_args = ctk.CTkEntry(self.frame_config)
+             entry_args.insert(0, get_val('args'))
+             entry_args.pack(fill="x", pady=5)
+             self.widgets['args'] = entry_args
+             
+             # Initial Visibility
+             if current_mode == "File":
+                 frame_file.pack(fill="x", pady=5)
+                 frame_code.pack_forget()
+             else:
+                 frame_file.pack_forget()
+                 frame_code.pack(fill="both", expand=True, pady=5)
+
+    def browse_folder(self, entry_widget):
+        folder = filedialog.askdirectory()
+        if folder:
+            entry_widget.delete(0, "end")
+            entry_widget.insert(0, folder)
+
+    def browse_file(self, entry_widget):
+        filename = filedialog.askopenfilename(filetypes=[("Audio", "*.mp3 *.wav *.ogg")])
+        if filename:
+            entry_widget.delete(0, "end")
+            entry_widget.insert(0, filename)
+
+    def browse_csharp(self, entry_widget):
+        filename = filedialog.askopenfilename(filetypes=[("C# Source", "*.cs *.csx *.csproj"), ("Executable", "*.exe"), ("All", "*.*")])
+        if filename:
+            entry_widget.delete(0, "end")
+            entry_widget.insert(0, filename)
+
+    def on_ok(self):
+        t = self.type_var.get()
+        res = {'type': t}
+        
+        # Harvest data
+        try:
+            if 'message' in self.widgets:
+                res['message'] = self.widgets['message'].get()
+            if 'ms' in self.widgets:
+                 res['ms'] = int(self.widgets['ms'].get())
+            if 'file' in self.widgets:
+                res['file'] = self.widgets['file'].get()
+            if 'folder' in self.widgets:
+                res['folder'] = self.widgets['folder'].get()
+            if 'device' in self.widgets:
+                res['device'] = self.widgets['device'].get()
+            if 'scene' in self.widgets:
+                res['scene'] = self.widgets['scene'].get()
+            if 'action_name' in self.widgets:
+                res['action_name'] = self.widgets['action_name'].get()
+            if 'target' in self.widgets:
+                res['target'] = self.widgets['target'].get()
+            if 'mode' in self.widgets:
+                res['mode'] = self.widgets['mode'].get()
+            if 'state' in self.widgets:
+                res['state'] = self.widgets['state'].get()
+            if 'duration' in self.widgets:
+                 res['duration'] = int(self.widgets['duration'].get())
+            if 'csharp_mode' in self.widgets:
+                 res['csharp_mode'] = self.widgets['csharp_mode'].get()
+            if 'code' in self.widgets:
+                 res['code'] = self.widgets['code'].get("0.0", "end-1c")
+
+            if 'path' in self.widgets:
+                 res['path'] = self.widgets['path'].get()
+            if 'args' in self.widgets:
+                 res['args'] = self.widgets['args'].get()
+            if 'post_to_chat' in self.widgets:
+                 res['post_to_chat'] = self.widgets['post_to_chat'].get()
+                
+            if 'value_slider' in self.widgets:
+                # Convert 0-100 slider to 0.0-1.0 for backend
+                val = self.widgets['value_slider'].get()
+                res['value'] = f"{val/100:.2f}"
+            elif 'value' in self.widgets: # Fallback if widget name mismatch
+                res['value'] = self.widgets['value'].get()
+                
+            if 'volume_slider' in self.widgets:
+                # Keep 0-100 for play_sound config
+                res['volume'] = str(int(self.widgets['volume_slider'].get()))
+            elif 'volume' in self.widgets:
+                res['volume'] = self.widgets['volume'].get()
+                
+            # Probability
+            if hasattr(self, 'prob_slider'):
+                 prob = float(self.prob_slider.get()) / 100.0
+                 res['probability'] = f"{prob:.2f}"
                 
         except ValueError:
             messagebox.showerror("Error", "Invalid numeric value!")
@@ -697,9 +1073,6 @@ class TriggerDialog(ctk.CTkToplevel):
         self.result = None
         self.initial_data = initial_data or {}
         
-        # --- TYPE SELECTION ---
-        ctk.CTkLabel(self, text="Trigger Type:").pack(pady=(10, 5))
-        
         # Get initial type from data
         start_type = self.initial_data.get('type', "twitch_command")
         
@@ -710,6 +1083,7 @@ class TriggerDialog(ctk.CTkToplevel):
             ("twitch_raid", "Twitch: Raid empfangen"),
             ("twitch_sub", "Twitch: Neuer Subscriber"),
             ("twitch_redemption", "Twitch: Kanalpunkt-Einl\xF6sung"),
+            ("twitch_first_message", "Twitch: Erste Nachricht (First Words)"),
             ("timer", "Timer (Intervall)"),
             ("obs_scene", "OBS: Szene gewechselt")
         ]
@@ -752,6 +1126,7 @@ class TriggerDialog(ctk.CTkToplevel):
 
     def on_type_change(self, choice):
         self.entry_var.set("") # Clear input default
+        self.entry_config.pack(fill="x", padx=10, pady=5) # Ensure entry is visible by default
         
         # Map display name back to internal type
         internal_type = self.type_mapping.get(choice, "twitch_command")
@@ -767,6 +1142,7 @@ class TriggerDialog(ctk.CTkToplevel):
              elif internal_type == "timer": val = str(self.initial_data.get('interval', 60))
              elif internal_type == "obs_scene": val = self.initial_data.get('scene_name', '')
              elif internal_type == "twitch_redemption": val = self.initial_data.get('reward_title', '')
+             elif internal_type == "twitch_first_message": val = self.initial_data.get('user', '')
              
         self.entry_var.set(val)
 
@@ -785,6 +1161,10 @@ class TriggerDialog(ctk.CTkToplevel):
         elif internal_type == "twitch_sub":
             self.lbl_config.configure(text="Keine Konfiguration nötig.")
             self.entry_config.configure(state="disabled")
+        elif internal_type == "twitch_first_message":
+            self.lbl_config.configure(text="Spezifischer User (Optional, leer = Alle):")
+            self.entry_config.configure(state="normal")
+            self.frame_perm.pack_forget()
         elif internal_type == "timer":
             self.lbl_config.configure(text="Intervall (Sekunden):")
             self.entry_config.configure(state="normal")
@@ -884,10 +1264,19 @@ class TriggerDialog(ctk.CTkToplevel):
             data['command'] = val
         elif t_type == "twitch_raid":
             data['min_viewers'] = int(val) if val.isdigit() else 0
+        elif t_type == "twitch_sub":
+             data['sub_plan'] = "1000" # Dummy or specific field if needed
+        elif t_type == "twitch_first_message":
+             data['user'] = val
         elif t_type == "timer":
             data['interval'] = int(val) if val.isdigit() else 60
         elif t_type == "obs_scene":
             data['scene_name'] = val
+        elif t_type == "twitch_redemption":
+             # Special case: value comes from dropdown if available
+             if hasattr(self, 'reward_var'):
+                 val = self.reward_var.get()
+             data['reward_title'] = val
         elif t_type == "twitch_redemption":
             data['reward_title'] = val
             

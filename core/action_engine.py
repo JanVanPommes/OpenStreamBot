@@ -251,6 +251,7 @@ class ActionEngine:
         elif event_type == "SystemEvent":
              if data.get("type") == "raid": mapped_type = "twitch_raid"
              elif data.get("type") == "sub": mapped_type = "twitch_sub"
+             elif data.get("type") == "twitch_first_message": mapped_type = "twitch_first_message"
         elif event_type == "TwitchRedemption":
             mapped_type = "twitch_redemption"
         
@@ -348,10 +349,22 @@ class ActionEngine:
                 return False, {}
                 
         # 3. OBS Scene Changed
-        elif event_type == "obs_scene":
+        elif mapped_type == "obs_scene":
             scene = trigger_config.get('scene_name', '')
             if scene and scene != data.get('scene_name'):
                 return False, {}
+                
+        # 4. First Words
+        elif mapped_type == "twitch_first_message":
+             # Optional: Filter by user?
+             target_user = trigger_config.get('user', '').lower()
+             if target_user and target_user != data.get('user', '').lower():
+                 return False, {}
+                 
+             return True, {
+                 "user": data.get('user', ''),
+                 "message": data.get('message', '')
+             }
 
         return True, {}
 
@@ -370,6 +383,14 @@ class ActionEngine:
     async def execute_sub_action(self, config, ctx):
         sa_type = config.get('type')
         
+        # --- PROBABILITY CHECK ---
+        probability = float(config.get('probability', 1.0))
+        if probability < 1.0:
+            roll = random.random() # 0.0 to 1.0
+            if roll > probability:
+                print(f"[ActionEngine] Skipping sub-action {sa_type} (Prob: {probability}, Roll: {roll:.2f})")
+                return
+
         # --- LOGIC ---
         if sa_type == "delay":
             ms = config.get('ms', 0)
@@ -403,6 +424,20 @@ class ActionEngine:
                 if self.twitch.connected_channels:
                     await self.twitch.connected_channels[0].send(msg)
 
+        # --- TWITCH CLIPS ---
+        elif sa_type == "twitch_create_clip":
+            if self.twitch:
+                print("[ActionEngine] Creating Twitch Clip...")
+                clip_url = await self.twitch.create_clip()
+                if clip_url:
+                    # Optional: Post link to chat if requested
+                    if config.get('post_to_chat', True):
+                         msg = f"Clip erstellt: {clip_url}"
+                         if self.twitch.connected_channels:
+                             await self.twitch.connected_channels[0].send(msg)
+            else:
+                print("[ActionEngine] Twitch Bot not available for clip creation.")
+
         # --- OBS ---
         elif sa_type == "obs_set_scene":
             scene = self.replace_vars(config.get('scene', ''), ctx)
@@ -413,6 +448,109 @@ class ActionEngine:
             # Generic OBS delegation if possible, or specific handlers
             pass
             
+        # --- C# EXECUTION (CLI RUNNER) ---
+        elif sa_type == "execute_csharp":
+             import subprocess
+             import tempfile
+             
+             path = self.replace_vars(config.get('path', ''), ctx)
+             code = self.replace_vars(config.get('code', ''), ctx)
+             mode = config.get('csharp_mode', 'File')
+             args_str = self.replace_vars(config.get('args', ''), ctx)
+             
+             cleanup_file = None
+             
+             if mode == 'Code' and code.strip():
+                 # Write to temp file
+                 try:
+                     fd, tmp_path = tempfile.mkstemp(suffix=".csx", text=True)
+                     with os.fdopen(fd, 'w') as f:
+                         f.write(code)
+                     path = tmp_path
+                     cleanup_file = path
+                     print(f"[ActionEngine] Created temp script: {path}")
+                 except Exception as e:
+                     print(f"[ActionEngine] Failed to create temp script: {e}")
+                     return
+
+             if not path or not os.path.exists(path):
+                 print(f"[ActionEngine] C# Error: Path not found: {path}")
+                 if cleanup_file: os.remove(cleanup_file)
+                 return
+
+             cmd = []
+             
+             # Detect Type
+             if path.endswith('.csproj'):
+                 # Project -> dotnet run
+                 cmd = ["dotnet", "run", "--project", path]
+                 # Valid args for app come after --
+                 if args_str:
+                     cmd.append("--")
+                     cmd.extend(args_str.split(' '))
+                     
+             elif path.endswith('.csx'):
+                 # Script -> dotnet script
+                 cmd = ["dotnet", "script", path]
+                 if args_str:
+                     cmd.append("--")
+                     cmd.extend(args_str.split(' '))
+                     
+             else:
+                 # Raw Executable or Unknown -> Try direct execution
+                 cmd = [path]
+                 if args_str:
+                     cmd.extend(args_str.split(' '))
+            
+             print(f"[ActionEngine] Executing C#: {' '.join(cmd)}")
+             
+             try:
+                 # Check for dotnet tools in PATH
+                 env = os.environ.copy()
+                 # Add default dotnet global tools path for Linux/Mac
+                 dotnet_tools = os.path.expanduser("~/.dotnet/tools")
+                 if dotnet_tools not in env.get("PATH", ""):
+                     env["PATH"] = f"{env.get('PATH', '')}:{dotnet_tools}"
+
+                 # Run async to not block bot? 
+                 # subprocess.run is blocking. create_subprocess_exec is async.
+                 proc = await asyncio.create_subprocess_exec(
+                     *cmd,
+                     stdout=asyncio.subprocess.PIPE,
+                     stderr=asyncio.subprocess.PIPE,
+                     env=env
+                 )
+                 
+                 stdout, stderr = await proc.communicate()
+                 
+                 if stdout:
+                     decoded = stdout.decode().strip()
+                     print(f"[C# Output] {decoded}")
+                     # Parse for "SetVar: key=value"
+                     for line in decoded.split('\n'):
+                         if line.startswith("SetVar:"):
+                             try:
+                                 # Format: SetVar: key=value
+                                 parts = line.split(':', 1)[1].split('=', 1)
+                                 if len(parts) == 2:
+                                     key = parts[0].strip()
+                                     val = parts[1].strip()
+                                     ctx[key] = val
+                                     print(f"[ActionEngine] Captured Variable: {key}={val}")
+                             except Exception as e:
+                                 print(f"[ActionEngine] Parse Error: {e}")
+                 if stderr:
+                     print(f"[C# Error] {stderr.decode().strip()}")
+                     
+             except FileNotFoundError:
+                 print(f"[ActionEngine] C# Error: Command not found (dotnet installed?).")
+             except Exception as e:
+                 print(f"[ActionEngine] C# Execution Failed: {e}")
+             finally:
+                 if cleanup_file and os.path.exists(cleanup_file):
+                     try:
+                         os.remove(cleanup_file)
+                     except: pass
         # --- MEDIA ---
         elif sa_type == "play_sound":
             file_path = self.replace_vars(config.get('file', ''), ctx)
@@ -482,6 +620,7 @@ class ActionEngine:
                      print("[Action] No Short found or cache empty.")
              else:
                  print("[Action] YouTube Bot not loaded.")
+
 
 
         # --- TRIGGER ACTION ---

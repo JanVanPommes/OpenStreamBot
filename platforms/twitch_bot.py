@@ -55,9 +55,12 @@ async def setup_twitch_token(config):
                     try:
                         new_creds = await refresh_twitch_token(client_id, client_secret, refresh_token)
                         
-                        # Neue Daten speichern
+                        # Neue Daten speichern (Merge old creds to keep refresh_token if not in new)
+                        updated_creds = creds.copy()
+                        updated_creds.update(new_creds)
+                        
                         with open(token_file, 'w') as f:
-                            json.dump(new_creds, f)
+                            json.dump(updated_creds, f)
                             
                         print("[Twitch] Token erfolgreich aktualisiert!")
                         return new_creds.get('access_token')
@@ -103,6 +106,9 @@ class TwitchBot(commands.Bot):
         self._joined_channels = []
         # Cache für Badges
         self.badge_map = {}
+        
+        # First Words Cache (Session based)
+        self.seen_users = set()
         
         # PubSub
         self.pubsub = pubsub.PubSubPool(self)
@@ -351,6 +357,34 @@ class TwitchBot(commands.Bot):
         except Exception as e:
             print(f"[Twitch API] Fehler fetch_custom_rewards: {e}")
 
+    async def create_clip(self):
+        """Erstellt einen Clip des aktuellen Streams."""
+        if not self.channel_id: return None
+        
+        try:
+            url = f"https://api.twitch.tv/helix/clips?broadcaster_id={self.channel_id}"
+            headers = {
+                "Client-Id": self._http.client_id,
+                "Authorization": f"Bearer {self._http.token.replace('oauth:', '')}"
+            }
+            
+            async with self._http.session.post(url, headers=headers) as resp:
+                if resp.status == 200 or resp.status == 202:
+                    data = await resp.json()
+                    clip_data = data['data'][0]
+                    clip_id = clip_data['id']
+                    edit_url = clip_data['edit_url']
+                    print(f"[Twitch] Clip erstellt: {edit_url}")
+                    return edit_url
+                else:
+                    text = await resp.text()
+                    print(f"[Twitch] Clip Fehler {resp.status}: {text}")
+                    return None
+        except Exception as e:
+            print(f"[Twitch] Clip Exception: {e}")
+            return None
+
+
     async def get_user_last_game(self, username):
         """
         Holt das zuletzt gespielte Spiel (oder aktuelle Kategorie) eines Users.
@@ -465,6 +499,24 @@ class TwitchBot(commands.Bot):
 
         # 3. An alle WebSocket-Clients senden (Overlays empfangen das jetzt!)
         await self.event_server.broadcast("ChatMessage", chat_data)
+
+        # --- FIRST WORDS TRIGGER ---
+        # Ignore own messages (Echo) or specific users if needed? No, generic.
+        # Check if user seen in this session
+        if author_name.lower() not in self.seen_users:
+            self.seen_users.add(author_name.lower())
+            print(f"[Twitch] First word from: {author_name}")
+            
+            # Emit Event for ActionEngine
+            await self.event_server.broadcast("SystemEvent", {
+                "type": "twitch_first_message",
+                "user": author_name,
+                "message": message.content,
+                "is_mod": is_mod,
+                "is_vip": is_vip,
+                "is_subscriber": is_subscriber,
+                "is_broadcaster": is_broadcaster
+            })
 
         # 4. Ignoriere Commands vom Bot selbst (Echo)
         if message.echo:
