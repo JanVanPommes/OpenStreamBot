@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.3 Beta] - 2026-02-22
+### Added
+- **Action Groups**: New sub-action (`random_action_group`) to randomly select and execute one of several nested sub-actions based on configurable probabilities. Perfect for diverse random responses.
+- **YouTube First Words**: New trigger (`youtube_first_message`) corresponding to Twitch's First Words, firing when a user sends their first chat message of the stream.
+- **User Blacklist for Triggers**: You can now define a comma-separated list of usernames to ignore for specific triggers (e.g. keeping bots out of "First Words").
+- **UI Polish**: Complete visual overhaul of the Launcher and Action Editor. Introduced a modern "Card" design with rounded corners, better spacing, and distinct accent colors to improve readability and user experience.
+
+### Fixed
+- **Action Editor Layout**: Fixed an issue where the `CTkScrollableFrame` would overlap and block clicks on the "Add Trigger" / "Add Sub-Action" buttons. Add-buttons are now securely anchored at the bottom.
+- **Action Group Persistence**: Fixed a bug where actions belonging to a group would "lose" their group assignment in the UI after a restart.
 ## [0.3.2 Beta] - 2026-02-18
 ### Added
 - **First Words Trigger**: New trigger type (`twitch_first_message`) that fires only on the first message of a user in the current session. Can be restricted to a specific user.

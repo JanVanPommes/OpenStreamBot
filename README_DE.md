@@ -1,6 +1,6 @@
 # OpenStreamBot
 
-**Version:** 0.3.2  
+**Version:** 0.3.3  
 **Ein Multi-Plattform Stream-Bot für Twitch & YouTube**
 
 OpenStreamBot ist ein Open-Source-Bot für Streamer, der Twitch und YouTube integriert, OBS Studio steuern kann und ein flexibles Action-System bietet. Ideal für Creator, die ihre Streams automatisieren und interaktiver gestalten möchten.
@@ -21,6 +21,9 @@ OpenStreamBot ist ein Open-Source-Bot für Streamer, der Twitch und YouTube inte
   - **Neu:** Kanalpunkte (Trigger & Verwaltung)
   - **Neu:** User Permissions (Befehle nur für Mods/VIPs)
   - **Neu:** HotSwitch (Sofortige Action-Steuerung)
+  - **Neu in 0.3.3:** YouTube First Words & User Blacklist
+  - **Neu in 0.3.3:** Action Groups (Verschachtelte Wahrscheinlichkeits-Actions)
+  - **Neu in 0.3.3:** Modernisiertes GUI "Card" Layout
   - **Neu in 0.3.2:** "First Words" Trigger
   - **Neu in 0.3.2:** Twitch Clips & Wahrscheinlichkeits-Actions
   - **Neu in 0.3.2:** C# Code Ausführung (Führe .cs/Skripte/Projekte aus)

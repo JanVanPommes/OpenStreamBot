@@ -29,13 +29,15 @@ class ActionEditorFrame(ctk.CTkFrame):
         self.grid_rowconfigure(0, weight=1)
 
         # LEFT SIDE: Action List
-        self.left_panel = ctk.CTkFrame(self, width=200)
+        self.left_panel = ctk.CTkFrame(self, width=220)
         self.left_panel.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         self.left_panel.grid_rowconfigure(1, weight=1)
+        self.left_panel.grid_columnconfigure(0, weight=1)
+        self.left_panel.grid_propagate(False)
         
         ctk.CTkLabel(self.left_panel, text="Actions", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, pady=5)
         
-        self.action_listbox = ctk.CTkScrollableFrame(self.left_panel)
+        self.action_listbox = ctk.CTkScrollableFrame(self.left_panel, width=200)
         self.action_listbox.grid(row=1, column=0, sticky="nsew", padx=5)
         
         self.btn_add_action = ctk.CTkButton(self.left_panel, text="+ New Action", command=self.add_action)
@@ -52,7 +54,7 @@ class ActionEditorFrame(ctk.CTkFrame):
         self.editor_panel.grid_rowconfigure(2, weight=1) # Subactions take space
 
         # Editor Header (Name + Group)
-        self.header_frame = ctk.CTkFrame(self.editor_panel, fg_color="transparent")
+        self.header_frame = ctk.CTkFrame(self.editor_panel, fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), corner_radius=10)
         self.header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
         
         self.var_action_name = ctk.StringVar()
@@ -61,9 +63,11 @@ class ActionEditorFrame(ctk.CTkFrame):
         
         self.var_action_group = ctk.StringVar()
         self.entry_group = ctk.CTkEntry(self.header_frame, textvariable=self.var_action_group, width=100, placeholder_text="Group")
-        self.var_action_group = ctk.StringVar()
-        self.entry_group = ctk.CTkEntry(self.header_frame, textvariable=self.var_action_group, width=100, placeholder_text="Group")
         self.entry_group.pack(side="right", padx=5)
+        
+        # Bind traces for live list update
+        self.var_action_name.trace_add("write", lambda *args: self.on_header_change())
+        self.var_action_group.trace_add("write", lambda *args: self.on_header_change())
         
         # Cooldown
         self.var_cooldown = ctk.StringVar()
@@ -77,32 +81,65 @@ class ActionEditorFrame(ctk.CTkFrame):
         self.switch_enabled.pack(side="right", padx=10)
         
         # Triggers Section
-        self.frame_triggers = ctk.CTkFrame(self.editor_panel)
-        self.frame_triggers.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
-        ctk.CTkLabel(self.frame_triggers, text="Triggers").pack(side="top", anchor="w", padx=5)
+        self.frame_triggers_container = ctk.CTkFrame(self.editor_panel, fg_color=("gray85", "#262626"), border_width=1, border_color=("gray75", "#333333"), corner_radius=10)
+        self.frame_triggers_container.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=10, pady=5)
+        self.editor_panel.grid_rowconfigure(1, weight=1) # Allow triggers to expand
         
-        self.btn_add_trigger = ctk.CTkButton(self.frame_triggers, text="+ Add Trigger", height=24, command=self.add_trigger_dialog)
-        self.btn_add_trigger.pack(side="bottom", pady=5)
+        ctk.CTkLabel(self.frame_triggers_container, text="Triggers", font=ctk.CTkFont(weight="bold")).pack(side="top", anchor="w", padx=15, pady=(10, 0))
 
-        self.scroll_triggers = ctk.CTkScrollableFrame(self.frame_triggers, height=100)
-        self.scroll_triggers.pack(fill="both", expand=True, padx=5, pady=5)
+        # Bottom Button Frame
+        triggers_btn_frame = ctk.CTkFrame(self.frame_triggers_container, fg_color="transparent")
+        triggers_btn_frame.pack(side="bottom", fill="x", padx=10, pady=10)
+        
+        self.btn_add_trigger = ctk.CTkButton(triggers_btn_frame, text="+ Add Trigger", height=32, font=ctk.CTkFont(weight="bold"), fg_color="#3B82F6", hover_color="#2563EB", command=self.add_trigger_dialog)
+        self.btn_add_trigger.pack(fill="x")
+
+        # IMPORTANT: Create scroll frame after bottom buttons to fix layout squash
+        self.scroll_triggers = ctk.CTkScrollableFrame(self.frame_triggers_container, fg_color="transparent")
+        self.scroll_triggers.pack(side="top", fill="both", expand=True, padx=5, pady=5)
 
         # Sub-Actions Section
-        self.frame_subs = ctk.CTkFrame(self.editor_panel)
-        self.frame_subs.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=10, pady=5)
-        ctk.CTkLabel(self.frame_subs, text="Sub-Actions").pack(side="top", anchor="w", padx=5)
+        self.frame_subs_container = ctk.CTkFrame(self.editor_panel, fg_color=("gray85", "#262626"), border_width=1, border_color=("gray75", "#333333"), corner_radius=10)
+        self.frame_subs_container.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=10, pady=5)
+        self.editor_panel.grid_rowconfigure(2, weight=2) # Subactions get slightly more weight
         
-        self.btn_add_sub = ctk.CTkButton(self.frame_subs, text="+ Add Sub-Action", command=self.add_sub_dialog)
-        self.btn_add_sub.pack(side="bottom", pady=5)
+        ctk.CTkLabel(self.frame_subs_container, text="Sub-Actions", font=ctk.CTkFont(weight="bold")).pack(side="top", anchor="w", padx=15, pady=(10, 0))
 
-        self.scroll_subs = ctk.CTkScrollableFrame(self.frame_subs)
-        self.scroll_subs.pack(fill="both", expand=True, padx=5, pady=5)
+        subs_btn_frame = ctk.CTkFrame(self.frame_subs_container, fg_color="transparent")
+        subs_btn_frame.pack(side="bottom", fill="x", padx=10, pady=10)
+
+        self.btn_add_sub = ctk.CTkButton(subs_btn_frame, text="+ Add Sub-Action", height=32, font=ctk.CTkFont(weight="bold"), fg_color="#10B981", hover_color="#059669", command=self.add_sub_dialog)
+        self.btn_add_sub.pack(fill="x")
+
+        self.scroll_subs = ctk.CTkScrollableFrame(self.frame_subs_container, fg_color="transparent")
+        self.scroll_subs.pack(side="top", fill="both", expand=True, padx=5, pady=5)
         
         # Save Button Main
         self.btn_save = ctk.CTkButton(self, text="Save Actions", fg_color="green", command=self.save_actions)
         self.btn_save.grid(row=1, column=0, columnspan=2, pady=10)
 
         self.refresh_action_list()
+
+    def on_header_change(self):
+        if getattr(self, '_is_loading_action', False) or not self.current_action: return
+        self.commit_current_changes()
+        
+        # Debounce/throttle the list refresh to avoid UI stutter if user types fast
+        if hasattr(self, '_refresh_timer'):
+            self.after_cancel(self._refresh_timer)
+        self._refresh_timer = self.after(500, self._delayed_refresh_list_preserve_selection)
+        
+    def _delayed_refresh_list_preserve_selection(self):
+        # We need to remember which action was selected
+        if not self.current_action: return
+        try:
+            current_idx = self.actions.index(self.current_action)
+            self.refresh_action_list()
+            # Restore selection visuals without re-triggering load
+            # Action list refresh re-creates all widgets, so we don't have a reliable "selection" 
+            # state other than the loaded right panel. Just refreshing the list is enough.
+        except ValueError:
+            pass
 
     def load_actions(self):
         if os.path.exists(self.config_file):
@@ -224,16 +261,48 @@ class ActionEditorFrame(ctk.CTkFrame):
                                     command=lambda i=idx: self.select_action(i),
                                     fg_color="transparent", border_width=1, text_color=("gray10", "gray90"))
                 btn.pack(fill="x", pady=2)
+                
+            # Bind events to header and its children inside the loop for this group
+            self._bind_scroll_events(header)
+            
+        # Bind events to all newly created buttons in the listbox
+        for child in self.action_listbox.winfo_children():
+            self._bind_scroll_events(child)
+
+    # --- SCROLL FIX (from Rewards Editor) ---
+    def _on_mouse_wheel(self, event):
+        # Linux (Button-4/5)
+        if hasattr(event, 'num') and event.num == 4:
+            self.action_listbox._parent_canvas.yview_scroll(-1, "units")
+        elif hasattr(event, 'num') and event.num == 5:
+            self.action_listbox._parent_canvas.yview_scroll(1, "units")
+        # Windows/Mac (Delta)
+        elif hasattr(event, 'delta'):
+            delta = int(-1*(event.delta/120))
+            self.action_listbox._parent_canvas.yview_scroll(delta, "units")
+            
+    def _bind_scroll_events(self, widget):
+        # Bind for Windows/Mac
+        widget.bind("<MouseWheel>", self._on_mouse_wheel)
+        # Bind for Linux
+        widget.bind("<Button-4>", self._on_mouse_wheel)
+        widget.bind("<Button-5>", self._on_mouse_wheel)
+        
+        # Recursively bind children
+        for child in widget.winfo_children():
+            self._bind_scroll_events(child)
+    # --- SCROLL FIX END ---
 
     def select_action(self, index):
         self.commit_current_changes()
+        self._is_loading_action = True
         self.current_action = self.actions[index]
-        self.var_action_name.set(self.current_action.get('name', ''))
         self.var_action_name.set(self.current_action.get('name', ''))
         self.var_action_group.set(self.current_action.get('group', 'General'))
         self.var_cooldown.set(str(self.current_action.get('cooldown', 0)))
         self.var_enabled.set(self.current_action.get('enabled', True))
         self.refresh_details()
+        self._is_loading_action = False
 
     def commit_current_changes(self):
         if self.current_action:
@@ -275,8 +344,8 @@ class ActionEditorFrame(ctk.CTkFrame):
         # Triggers
         triggers = self.current_action.get('triggers', [])
         for i, t in enumerate(triggers):
-            f = ctk.CTkFrame(self.scroll_triggers)
-            f.pack(fill="x", pady=2)
+            f = ctk.CTkFrame(self.scroll_triggers, fg_color=("gray90", "#3A3A3A"), border_width=1, border_color=("gray80", "#4D4D4D"), corner_radius=6)
+            f.pack(fill="x", pady=4, padx=5)
             text = f"{t['type']}"
             if 'command' in t: 
                 perm = t.get('permission', 'Everyone')
@@ -285,34 +354,38 @@ class ActionEditorFrame(ctk.CTkFrame):
             elif 'min_viewers' in t: text += f" (>{t['min_viewers']})"
             elif 'interval' in t: text += f" ({t['interval']}s)"
             elif 'reward_title' in t: text += f": {t['reward_title']}"
+            elif t['type'] in ['twitch_first_message', 'youtube_first_message'] and t.get('user'): text += f" (User: {t['user']})"
             
             lbl = ctk.CTkLabel(f, text=text)
             lbl.pack(side="left", padx=5)
             
             # Controls (Right side)
-            # Del btn
-            ctk.CTkButton(f, text="X", width=20, fg_color="red", command=lambda x=t: self.remove_trigger(x)).pack(side="right", padx=2)
-            # Edit btn
-            ctk.CTkButton(f, text="E", width=20, command=lambda x=t: self.edit_trigger(x)).pack(side="right", padx=2)
-            
-            # Move Down
-            if i < len(triggers) - 1:
-                ctk.CTkButton(f, text="↓", width=20, command=lambda x=i: self.move_trigger_down(x)).pack(side="right", padx=1)
-            else:
-                 ctk.CTkLabel(f, text=" ", width=20).pack(side="right", padx=1) # Spacer
-                 
+            btn_frame = ctk.CTkFrame(f, fg_color="transparent")
+            btn_frame.pack(side="right", padx=5)
+
             # Move Up
             if i > 0:
-                ctk.CTkButton(f, text="↑", width=20, command=lambda x=i: self.move_trigger_up(x)).pack(side="right", padx=1)
+                ctk.CTkButton(btn_frame, text="↑", width=24, fg_color="#6B7280", hover_color="#4B5563", command=lambda x=i: self.move_trigger_up(x)).pack(side="right", padx=2)
             else:
-                 ctk.CTkLabel(f, text=" ", width=20).pack(side="right", padx=1) # Spacer
+                 ctk.CTkLabel(btn_frame, text=" ", width=24).pack(side="right", padx=2) # Spacer
+                 
+            # Move Down
+            if i < len(triggers) - 1:
+                ctk.CTkButton(btn_frame, text="↓", width=24, fg_color="#6B7280", hover_color="#4B5563", command=lambda x=i: self.move_trigger_down(x)).pack(side="right", padx=2)
+            else:
+                 ctk.CTkLabel(btn_frame, text=" ", width=24).pack(side="right", padx=2) # Spacer
+
+            # Edit btn
+            ctk.CTkButton(btn_frame, text="✎", width=24, fg_color="#3B82F6", hover_color="#2563EB", command=lambda x=t: self.edit_trigger(x)).pack(side="right", padx=2)
+            # Del btn
+            ctk.CTkButton(btn_frame, text="X", width=24, fg_color="#EF4444", hover_color="#DC2626", command=lambda x=t: self.remove_trigger(x)).pack(side="right", padx=2)
 
 
         # Sub Actions
         sub_actions = self.current_action.get('sub_actions', [])
         for i, s in enumerate(sub_actions):
-            f = ctk.CTkFrame(self.scroll_subs)
-            f.pack(fill="x", pady=2)
+            f = ctk.CTkFrame(self.scroll_subs, fg_color=("gray90", "#3A3A3A"), border_width=1, border_color=("gray80", "#4D4D4D"), corner_radius=6)
+            f.pack(fill="x", pady=4, padx=5)
             
             summary = s['type']
             if 'message' in s: summary += f": {s['message'][:20]}..."
@@ -324,23 +397,28 @@ class ActionEditorFrame(ctk.CTkFrame):
                     summary += f": '{s['action_name']}' -> {s.get('state')} ({s.get('duration')}s)"
                 else: 
                     summary += f": -> {s['action_name']}"
+            elif s['type'] == 'random_action_group':
+                summary += f": {len(s.get('targets', []))} Actions"
             
             lbl = ctk.CTkLabel(f, text=summary)
             lbl.pack(side="left", padx=5)
             
             # Controls
-            ctk.CTkButton(f, text="X", width=20, fg_color="red", command=lambda x=s: self.remove_sub(x)).pack(side="right", padx=2)
-            ctk.CTkButton(f, text="E", width=20, command=lambda x=s: self.edit_sub_action(x)).pack(side="right", padx=2)
-
-            if i < len(sub_actions) - 1:
-                ctk.CTkButton(f, text="↓", width=20, command=lambda x=i: self.move_subaction_down(x)).pack(side="right", padx=1)
-            else:
-                 ctk.CTkLabel(f, text=" ", width=20).pack(side="right", padx=1)
+            btn_frame = ctk.CTkFrame(f, fg_color="transparent")
+            btn_frame.pack(side="right", padx=5)
 
             if i > 0:
-                ctk.CTkButton(f, text="↑", width=20, command=lambda x=i: self.move_subaction_up(x)).pack(side="right", padx=1)
+                ctk.CTkButton(btn_frame, text="↑", width=24, fg_color="#6B7280", hover_color="#4B5563", command=lambda x=i: self.move_subaction_up(x)).pack(side="right", padx=2)
             else:
-                 ctk.CTkLabel(f, text=" ", width=20).pack(side="right", padx=1)
+                 ctk.CTkLabel(btn_frame, text=" ", width=24).pack(side="right", padx=2)
+
+            if i < len(sub_actions) - 1:
+                ctk.CTkButton(btn_frame, text="↓", width=24, fg_color="#6B7280", hover_color="#4B5563", command=lambda x=i: self.move_subaction_down(x)).pack(side="right", padx=2)
+            else:
+                 ctk.CTkLabel(btn_frame, text=" ", width=24).pack(side="right", padx=2)
+
+            ctk.CTkButton(btn_frame, text="✎", width=24, fg_color="#3B82F6", hover_color="#2563EB", command=lambda x=s: self.edit_sub_action(x)).pack(side="right", padx=2)
+            ctk.CTkButton(btn_frame, text="X", width=24, fg_color="#EF4444", hover_color="#DC2626", command=lambda x=s: self.remove_sub(x)).pack(side="right", padx=2)
 
     def remove_trigger(self, item):
         self.current_action['triggers'].remove(item)
@@ -426,7 +504,7 @@ class SubActionDialog(ctk.CTkToplevel):
         
         
         # Sort and unique
-        sub_types = sorted(list(set(["twitch_chat", "delay", "log", "play_sound", "stop_sounds", "playlist", "stop_playlist", "obs_set_scene", "youtube_random_short", "trigger_action", "set_volume", "set_action_state", "twitch_create_clip", "execute_csharp"])))
+        sub_types = sorted(list(set(["twitch_chat", "delay", "log", "play_sound", "stop_sounds", "playlist", "stop_playlist", "obs_set_scene", "youtube_random_short", "trigger_action", "set_volume", "set_action_state", "twitch_create_clip", "execute_csharp", "random_action_group"])))
         
         self.combo = ctk.CTkComboBox(self, variable=self.type_var, 
                                      values=sub_types,
@@ -982,6 +1060,74 @@ class SubActionDialog(ctk.CTkToplevel):
                  frame_file.pack_forget()
                  frame_code.pack(fill="both", expand=True, pady=5)
 
+        elif choice == "random_action_group":
+             ctk.CTkLabel(self.frame_config, text="Zufällige Sub-Aktionen (Summe muss 100% ergeben):").pack(anchor="w", pady=5)
+             
+             self.widgets['targets'] = []
+             list_frame = ctk.CTkFrame(self.frame_config)
+             list_frame.pack(fill="both", expand=True, pady=5)
+             
+             label_total = ctk.CTkLabel(self.frame_config, text="Total: 0%")
+             label_total.pack(anchor="w")
+
+             def update_total(*args):
+                 total = 0
+                 for _, sub_data, w_var in self.widgets['targets']:
+                     try: total += float(w_var.get() or 0)
+                     except: pass
+                 label_total.configure(text=f"Total: {total:g}%")
+                 if total != 100: label_total.configure(text_color="red")
+                 else: label_total.configure(text_color=("black", "white"))
+
+             def add_row(sub_data=None, weight=0):
+                 if sub_data is None:
+                     sub_data = {'type': 'twitch_chat'} # Default empty action
+                     
+                 row = ctk.CTkFrame(list_frame)
+                 row.pack(fill="x", pady=2)
+                 
+                 # Display name for subaction
+                 def get_display(d):
+                     return d.get('type', 'Unknown')
+                     
+                 lbl_name = ctk.CTkLabel(row, text=get_display(sub_data), width=150, anchor="w")
+                 lbl_name.pack(side="left", padx=5)
+                 
+                 # Edit Button to configure nested SubAction
+                 def edit_nested():
+                     # self.master is ActionEditorFrame in this context
+                     # Create a nested dialog
+                     dialog = SubActionDialog(self.master, initial_data=sub_data)
+                     # SubActionDialog waits for window close
+                     self.wait_window(dialog)
+                     if dialog.result:
+                         sub_data.clear()
+                         sub_data.update(dialog.result)
+                         lbl_name.configure(text=get_display(sub_data))
+                 
+                 ctk.CTkButton(row, text="Bearbeiten", width=80, command=edit_nested).pack(side="left", padx=5)
+                 
+                 w_var = ctk.StringVar(value=str(weight))
+                 w_var.trace_add("write", update_total)
+                 ctk.CTkEntry(row, textvariable=w_var, width=50).pack(side="left", padx=5)
+                 ctk.CTkLabel(row, text="%").pack(side="left")
+                 
+                 def del_row():
+                     row.destroy()
+                     self.widgets['targets'] = [t for t in self.widgets['targets'] if t[0] != row]
+                     update_total()
+                     
+                 ctk.CTkButton(row, text="X", width=30, fg_color="red", command=del_row).pack(side="right", padx=5)
+                 self.widgets['targets'].append((row, sub_data, w_var))
+                 update_total()
+                 
+             init_targets = self.initial_data.get('targets', []) if self.initial_data and self.initial_data.get('type') == choice else []
+             if not init_targets: add_row(None, 100)
+             else:
+                 for t in init_targets: add_row(t.get('action', {}), t.get('weight', 0))
+                 
+             ctk.CTkButton(self.frame_config, text="+ Sub-Aktion hinzufügen", command=add_row).pack(pady=5)
+
     def browse_folder(self, entry_widget):
         folder = filedialog.askdirectory()
         if folder:
@@ -1053,6 +1199,19 @@ class SubActionDialog(ctk.CTkToplevel):
             elif 'volume' in self.widgets:
                 res['volume'] = self.widgets['volume'].get()
                 
+            if 'targets' in self.widgets and t == 'random_action_group':
+                 total = 0
+                 targets = []
+                 for _, sub_data, w_var in self.widgets['targets']:
+                     w = float(w_var.get() or 0)
+                     total += w
+                     # Speichere die verschachtelte Sub-Action anstatt einen Namen
+                     targets.append({'action': sub_data, 'weight': w})
+                 if round(total, 2) != 100.0:
+                     messagebox.showerror("Error", f"Die Summe der Wahrscheinlichkeiten muss 100% ergeben! (Aktuell: {total}%)")
+                     return
+                 res['targets'] = targets
+                 
             # Probability
             if hasattr(self, 'prob_slider'):
                  prob = float(self.prob_slider.get()) / 100.0
@@ -1084,6 +1243,7 @@ class TriggerDialog(ctk.CTkToplevel):
             ("twitch_sub", "Twitch: Neuer Subscriber"),
             ("twitch_redemption", "Twitch: Kanalpunkt-Einl\xF6sung"),
             ("twitch_first_message", "Twitch: Erste Nachricht (First Words)"),
+            ("youtube_first_message", "YouTube: Erste Nachricht (First Words)"),
             ("timer", "Timer (Intervall)"),
             ("obs_scene", "OBS: Szene gewechselt")
         ]
@@ -1119,10 +1279,18 @@ class TriggerDialog(ctk.CTkToplevel):
         self.entry_config = ctk.CTkEntry(self.config_frame, textvariable=self.entry_var)
         self.entry_config.pack(fill="x", padx=10, pady=5)
         
+        # --- BLACKLIST ---
+        self.frame_blacklist = ctk.CTkFrame(self.config_frame, fg_color="transparent")
+        ctk.CTkLabel(self.frame_blacklist, text="Ignorierte Benutzer (Blacklist, Komma-getrennt):").pack(anchor="w")
+        self.blacklist_var = ctk.StringVar(value=self.initial_data.get('blacklist_users', ''))
+        self.entry_blacklist = ctk.CTkEntry(self.frame_blacklist, textvariable=self.blacklist_var)
+        self.entry_blacklist.pack(fill="x", pady=5)
+        self.frame_blacklist.pack(fill="x", padx=10, pady=5)
+        
         # OK BUTTON
         ctk.CTkButton(self, text="Save" if initial_data else "Add", command=self.on_ok).pack(pady=10)
         
-        self.on_type_change(start_type)
+        self.on_type_change(start_display)
 
     def on_type_change(self, choice):
         self.entry_var.set("") # Clear input default
@@ -1142,7 +1310,7 @@ class TriggerDialog(ctk.CTkToplevel):
              elif internal_type == "timer": val = str(self.initial_data.get('interval', 60))
              elif internal_type == "obs_scene": val = self.initial_data.get('scene_name', '')
              elif internal_type == "twitch_redemption": val = self.initial_data.get('reward_title', '')
-             elif internal_type == "twitch_first_message": val = self.initial_data.get('user', '')
+             elif internal_type in ["twitch_first_message", "youtube_first_message"]: val = self.initial_data.get('user', '')
              
         self.entry_var.set(val)
 
@@ -1161,7 +1329,7 @@ class TriggerDialog(ctk.CTkToplevel):
         elif internal_type == "twitch_sub":
             self.lbl_config.configure(text="Keine Konfiguration nötig.")
             self.entry_config.configure(state="disabled")
-        elif internal_type == "twitch_first_message":
+        elif internal_type in ["twitch_first_message", "youtube_first_message"]:
             self.lbl_config.configure(text="Spezifischer User (Optional, leer = Alle):")
             self.entry_config.configure(state="normal")
             self.frame_perm.pack_forget()
@@ -1266,7 +1434,7 @@ class TriggerDialog(ctk.CTkToplevel):
             data['min_viewers'] = int(val) if val.isdigit() else 0
         elif t_type == "twitch_sub":
              data['sub_plan'] = "1000" # Dummy or specific field if needed
-        elif t_type == "twitch_first_message":
+        elif t_type in ["twitch_first_message", "youtube_first_message"]:
              data['user'] = val
         elif t_type == "timer":
             data['interval'] = int(val) if val.isdigit() else 60
@@ -1277,8 +1445,11 @@ class TriggerDialog(ctk.CTkToplevel):
              if hasattr(self, 'reward_var'):
                  val = self.reward_var.get()
              data['reward_title'] = val
-        elif t_type == "twitch_redemption":
-            data['reward_title'] = val
+             
+        # Speichere die Blacklist
+        bl = self.blacklist_var.get().strip()
+        if bl: data['blacklist_users'] = bl
+        elif 'blacklist_users' in data: del data['blacklist_users']
             
         self.result = data
         self.destroy()

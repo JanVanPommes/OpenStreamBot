@@ -252,12 +252,24 @@ class ActionEngine:
              if data.get("type") == "raid": mapped_type = "twitch_raid"
              elif data.get("type") == "sub": mapped_type = "twitch_sub"
              elif data.get("type") == "twitch_first_message": mapped_type = "twitch_first_message"
+             elif data.get("type") == "youtube_first_message": mapped_type = "youtube_first_message"
         elif event_type == "TwitchRedemption":
             mapped_type = "twitch_redemption"
         
         # Check Type
         if trigger_config.get('type') != mapped_type:
             return False, {}
+            
+        # --- BLACKLIST CHECK ---
+        blacklist_raw = trigger_config.get('blacklist_users', '').strip()
+        if blacklist_raw:
+            bl_users = [u.strip().lower() for u in blacklist_raw.split(',') if u.strip()]
+            user = data.get('user', '')
+            if not user and 'author' in data: user = data['author']
+            
+            if user and user.lower() in bl_users:
+                print(f"[ActionEngine] Trigger '{mapped_type}' blocked for blacklisted user: {user}")
+                return False, {}
             
         # Condition Check
         
@@ -355,7 +367,7 @@ class ActionEngine:
                 return False, {}
                 
         # 4. First Words
-        elif mapped_type == "twitch_first_message":
+        elif mapped_type in ["twitch_first_message", "youtube_first_message"]:
              # Optional: Filter by user?
              target_user = trigger_config.get('user', '').lower()
              if target_user and target_user != data.get('user', '').lower():
@@ -622,6 +634,28 @@ class ActionEngine:
                  print("[Action] YouTube Bot not loaded.")
 
 
+
+        # --- RANDOM ACTION GROUP ---
+        elif sa_type == "random_action_group":
+            targets = config.get('targets', [])
+            if not targets: return
+            
+            roll = random.uniform(0, 100)
+            cumulative = 0.0
+            
+            for t in targets:
+                weight = float(t.get('weight', 0))
+                if weight <= 0: continue
+                cumulative += weight
+                if roll <= cumulative:
+                    sub_action_data = t.get('action')
+                    if sub_action_data:
+                        nested_type = sub_action_data.get('type', 'Unknown')
+                        print(f"[ActionEngine] Randomly selected '{nested_type}' from group (Weight: {weight}%)")
+                        asyncio.create_task(self.execute_sub_action(sub_action_data, ctx))
+                    else:
+                        print(f"[ActionEngine] Random target action missing.")
+                    break
 
         # --- TRIGGER ACTION ---
         elif sa_type == "trigger_action":

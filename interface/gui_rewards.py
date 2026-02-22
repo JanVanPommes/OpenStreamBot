@@ -33,7 +33,7 @@ class RewardEditorFrame(ctk.CTkFrame):
         self.footer = ctk.CTkFrame(self, fg_color="transparent")
         self.footer.grid(row=2, column=0, sticky="ew", padx=20, pady=20)
         
-        ctk.CTkButton(self.footer, text="+ Create New Reward", command=self.add_reward_dialog, fg_color="green").pack(fill="x")
+        ctk.CTkButton(self.footer, text="+ Create New Reward", command=self.add_reward_dialog, fg_color="#10B981", hover_color="#059669").pack(fill="x")
         
         # Initial Load
         self.load_creds()
@@ -143,8 +143,8 @@ class RewardEditorFrame(ctk.CTkFrame):
     # --- SCROLL FIX END ---
 
     def create_reward_item(self, r):
-        f = ctk.CTkFrame(self.scroll_frame)
-        f.pack(fill="x", pady=5)
+        f = ctk.CTkFrame(self.scroll_frame, fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), corner_radius=10)
+        f.pack(fill="x", pady=5, padx=5)
         
         # Color indicator
         color = r.get('background_color', "#555")
@@ -171,15 +171,16 @@ class RewardEditorFrame(ctk.CTkFrame):
         
         # Toggle
         state_txt = "Disable" if r['is_enabled'] else "Enable"
-        ctk.CTkButton(btn_frame, text=state_txt, width=60, 
+        toggle_color = "#6B7280" if r['is_enabled'] else "#10B981"
+        ctk.CTkButton(btn_frame, text=state_txt, width=60, fg_color=toggle_color,
                       command=lambda: self.toggle_reward(r['id'], not r['is_enabled'])).pack(side="left", padx=2)
         
         # Edit
-        ctk.CTkButton(btn_frame, text="Edit", width=60, 
+        ctk.CTkButton(btn_frame, text="Edit", width=60, fg_color="#3B82F6", hover_color="#2563EB",
                       command=lambda: self.edit_reward_dialog(r)).pack(side="left", padx=2)
                       
         # Delete
-        ctk.CTkButton(btn_frame, text="Del", width=40, fg_color="red", 
+        ctk.CTkButton(btn_frame, text="Del", width=40, fg_color="#EF4444", hover_color="#DC2626",
                       command=lambda: self.delete_reward(r['id'])).pack(side="left", padx=2)
         
         # Fix Scroll

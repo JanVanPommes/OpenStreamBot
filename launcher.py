@@ -32,7 +32,7 @@ ctk.set_default_color_theme("blue")
 CONFIG_FILE = "config.yaml"
 # Nutze nun den internen Webserver statt Datei-Pfad
 DASHBOARD_URL = "http://localhost:8000/interface/dashboard.html"
-VERSION = "0.3.2"
+VERSION = "0.3.3"
 
 class ConsoleRedirector:
     def __init__(self, text_widget, queue):
@@ -76,7 +76,7 @@ class App(ctk.CTk):
             print(f"Failed to set icon: {e}")
 
         # --- Sidebar ---
-        self.sidebar_frame = ctk.CTkFrame(self, width=140, corner_radius=0)
+        self.sidebar_frame = ctk.CTkFrame(self, width=140, corner_radius=0, fg_color=("gray80", "#2A2A2A"))
         self.sidebar_frame.grid(row=0, column=0, rowspan=4, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(4, weight=1)
 
@@ -101,23 +101,23 @@ class App(ctk.CTk):
 
         self.logo_label.grid(row=1, column=0, padx=20, pady=(0, 10))
 
-        self.sidebar_button_1 = ctk.CTkButton(self.sidebar_frame, text="Control Center", command=self.show_dashboard_frame)
-        self.sidebar_button_1.grid(row=2, column=0, padx=20, pady=10)
+        self.sidebar_button_1 = ctk.CTkButton(self.sidebar_frame, text="Control Center", height=40, font=ctk.CTkFont(weight="bold"), fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), text_color=("gray10", "gray90"), hover_color=("gray70", "#4D4D4D"), command=self.show_dashboard_frame)
+        self.sidebar_button_1.grid(row=2, column=0, padx=15, pady=8, sticky="ew")
         
-        self.sidebar_button_2 = ctk.CTkButton(self.sidebar_frame, text="Settings", command=self.show_settings_frame)
-        self.sidebar_button_2.grid(row=3, column=0, padx=20, pady=10)
+        self.sidebar_button_2 = ctk.CTkButton(self.sidebar_frame, text="Configuration", height=40, font=ctk.CTkFont(weight="bold"), fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), text_color=("gray10", "gray90"), hover_color=("gray70", "#4D4D4D"), command=self.show_settings_frame)
+        self.sidebar_button_2.grid(row=3, column=0, padx=15, pady=8, sticky="ew")
 
-        self.sidebar_button_3 = ctk.CTkButton(self.sidebar_frame, text="Accounts", command=self.show_accounts_frame)
-        self.sidebar_button_3.grid(row=4, column=0, padx=20, pady=10)
+        self.sidebar_button_3 = ctk.CTkButton(self.sidebar_frame, text="Accounts", height=40, font=ctk.CTkFont(weight="bold"), fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), text_color=("gray10", "gray90"), hover_color=("gray70", "#4D4D4D"), command=self.show_accounts_frame)
+        self.sidebar_button_3.grid(row=4, column=0, padx=15, pady=8, sticky="ew")
 
-        self.sidebar_button_rewards = ctk.CTkButton(self.sidebar_frame, text="Rewards", command=self.show_rewards_frame)
-        self.sidebar_button_rewards.grid(row=5, column=0, padx=20, pady=10)
+        self.sidebar_button_rewards = ctk.CTkButton(self.sidebar_frame, text="Twitch Rewards", height=40, font=ctk.CTkFont(weight="bold"), fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), text_color=("gray10", "gray90"), hover_color=("gray70", "#4D4D4D"), command=self.show_rewards_frame)
+        self.sidebar_button_rewards.grid(row=5, column=0, padx=15, pady=8, sticky="ew")
 
-        self.sidebar_button_4 = ctk.CTkButton(self.sidebar_frame, text="Actions Editor", command=self.show_actions_frame)
-        self.sidebar_button_4.grid(row=6, column=0, padx=20, pady=10)
+        self.sidebar_button_4 = ctk.CTkButton(self.sidebar_frame, text="Actions Editor", height=40, font=ctk.CTkFont(weight="bold"), fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), text_color=("gray10", "gray90"), hover_color=("gray70", "#4D4D4D"), command=self.show_actions_frame)
+        self.sidebar_button_4.grid(row=6, column=0, padx=15, pady=8, sticky="ew")
 
-        self.sidebar_button_5 = ctk.CTkButton(self.sidebar_frame, text="Profiles", command=self.show_profiles_frame)
-        self.sidebar_button_5.grid(row=7, column=0, padx=20, pady=10)
+        self.sidebar_button_5 = ctk.CTkButton(self.sidebar_frame, text="Profiles", height=40, font=ctk.CTkFont(weight="bold"), fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), text_color=("gray10", "gray90"), hover_color=("gray70", "#4D4D4D"), command=self.show_profiles_frame)
+        self.sidebar_button_5.grid(row=7, column=0, padx=15, pady=8, sticky="ew")
 
         self.status_label = ctk.CTkLabel(self.sidebar_frame, text="Status: Bot Offline", text_color="gray")
         self.status_label.grid(row=8, column=0, padx=20, pady=(10, 0))
@@ -158,30 +158,34 @@ class App(ctk.CTk):
         self.dash_label = ctk.CTkLabel(self.dashboard_frame, text="Control Center", font=ctk.CTkFont(size=24, weight="bold"))
         self.dash_label.grid(row=0, column=0, padx=20, pady=20, sticky="w")
 
-        # Buttons Area
-        self.btn_frame = ctk.CTkFrame(self.dashboard_frame)
+        # Buttons Area Card
+        self.btn_frame = ctk.CTkFrame(self.dashboard_frame, fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), corner_radius=10)
         self.btn_frame.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
 
-        self.start_btn = ctk.CTkButton(self.btn_frame, text="Start Bot", command=self.toggle_bot, fg_color="green", hover_color="darkgreen")
-        self.start_btn.grid(row=0, column=0, padx=20, pady=20)
+        self.start_btn = ctk.CTkButton(self.btn_frame, text="Start Bot", height=32, font=ctk.CTkFont(weight="bold"), command=self.toggle_bot, fg_color="#10B981", hover_color="#059669")
+        self.start_btn.pack(side="left", padx=20, pady=20, expand=True)
 
-        self.open_web_btn = ctk.CTkButton(self.btn_frame, text="Open Web Dashboard", command=self.open_web_dashboard)
-        self.open_web_btn.grid(row=0, column=1, padx=20, pady=20)
+        self.open_web_btn = ctk.CTkButton(self.btn_frame, text="Open Web Dashboard", height=32, font=ctk.CTkFont(weight="bold"), command=self.open_web_dashboard, fg_color="#3B82F6", hover_color="#2563EB")
+        self.open_web_btn.pack(side="left", padx=20, pady=20, expand=True)
 
-        # YouTube Stream Control (NEW)
-        self.yt_connect_btn = ctk.CTkButton(self.btn_frame, text="Connect YouTube Stream", command=self.connect_youtube_stream, fg_color="#FF0000", hover_color="#CC0000")
-        self.yt_connect_btn.grid(row=0, column=2, padx=20, pady=20)
-        self.yt_connect_btn.configure(state="disabled") # Initially disabled until bot starts
+        # YouTube Stream Control
+        self.yt_connect_btn = ctk.CTkButton(self.btn_frame, text="Connect YouTube Stream", height=32, font=ctk.CTkFont(weight="bold"), command=self.connect_youtube_stream, fg_color="#EF4444", hover_color="#DC2626")
+        self.yt_connect_btn.pack(side="left", padx=20, pady=20, expand=True)
+        self.yt_connect_btn.configure(state="disabled")
 
-        # Console Output
-        self.console_label = ctk.CTkLabel(self.dashboard_frame, text="Live Log Output:", anchor="w")
-        self.console_label.grid(row=2, column=0, padx=20, pady=(20,5), sticky="w")
+        # Console Output Card
+        self.console_frame = ctk.CTkFrame(self.dashboard_frame, fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), corner_radius=10)
+        self.console_frame.grid(row=2, column=0, padx=20, pady=10, sticky="nsew")
+        self.console_frame.grid_columnconfigure(0, weight=1)
+        self.console_frame.grid_rowconfigure(1, weight=1)
 
-        self.log_textbox = ctk.CTkTextbox(self.dashboard_frame, width=600, height=300)
-        self.log_textbox.grid(row=3, column=0, padx=20, pady=5, sticky="nsew")
+        self.console_label = ctk.CTkLabel(self.console_frame, text="Live Log Output", font=ctk.CTkFont(weight="bold"), anchor="w")
+        self.console_label.grid(row=0, column=0, padx=15, pady=(15, 5), sticky="w")
+
+        self.log_textbox = ctk.CTkTextbox(self.console_frame, width=600, height=300, fg_color=("gray90", "gray10"), corner_radius=5)
+        self.log_textbox.grid(row=1, column=0, padx=15, pady=(0, 15), sticky="nsew")
         
         # Configure Tags for ANSI Colors
-        # Access underlying tkinter widget for tags
         try:
             tb = self.log_textbox._textbox
             tb.tag_config("red", foreground="#FF5555")
@@ -189,29 +193,31 @@ class App(ctk.CTk):
             tb.tag_config("yellow", foreground="#F1FA8C")
             tb.tag_config("cyan", foreground="#8BE9FD")
             tb.tag_config("grey", foreground="#6272A4")
-            tb.tag_config("reset", foreground="#F8F8F2") # Default/White
+            tb.tag_config("reset", foreground="#F8F8F2")
         except:
-             pass # Fallback if internal structure changes
+             pass
 
-        self.dashboard_frame.grid_rowconfigure(3, weight=1)
+        self.dashboard_frame.grid_rowconfigure(2, weight=1)
         self.dashboard_frame.grid_columnconfigure(0, weight=1)
 
     def setup_settings_frame(self):
         self.settings_label = ctk.CTkLabel(self.settings_frame, text="Configuration", font=ctk.CTkFont(size=24, weight="bold"))
         self.settings_label.grid(row=0, column=0, padx=20, pady=20, sticky="w")
 
-        self.config_content = ctk.CTkTextbox(self.settings_frame, width=600, height=400)
+        self.config_content = ctk.CTkTextbox(self.settings_frame, width=600, height=400, fg_color=("gray90", "gray10"), corner_radius=10)
         self.config_content.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
         
         self.settings_frame.grid_rowconfigure(1, weight=1)
         self.settings_frame.grid_columnconfigure(0, weight=1)
 
-        self.load_btn = ctk.CTkButton(self.settings_frame, text="Reload Config File", command=self.load_config_to_ui)
-        self.load_btn.grid(row=2, column=0, padx=20, pady=10, sticky="e")
+        self.settings_btn_frame = ctk.CTkFrame(self.settings_frame, fg_color="transparent")
+        self.settings_btn_frame.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
+
+        self.load_btn = ctk.CTkButton(self.settings_btn_frame, text="Reload Config", command=self.load_config_to_ui, fg_color="#6B7280", hover_color="#4B5563")
+        self.load_btn.pack(side="right", padx=10)
         
-        # Save Button
-        self.save_btn = ctk.CTkButton(self.settings_frame, text="Save Config", command=self.save_config_from_ui)
-        self.save_btn.grid(row=2, column=0, padx=20, pady=10, sticky="w")
+        self.save_btn = ctk.CTkButton(self.settings_btn_frame, text="Save Config", command=self.save_config_from_ui, fg_color="#10B981", hover_color="#059669")
+        self.save_btn.pack(side="right", padx=10)
         
         self.load_config_to_ui()
 
@@ -220,46 +226,46 @@ class App(ctk.CTk):
         self.acc_label = ctk.CTkLabel(self.accounts_frame, text="Manage Accounts", font=ctk.CTkFont(size=24, weight="bold"))
         self.acc_label.grid(row=0, column=0, padx=20, pady=20, sticky="w")
 
-        # Twitch Section
-        self.twitch_frame = ctk.CTkFrame(self.accounts_frame)
+        # Twitch Section Card
+        self.twitch_frame = ctk.CTkFrame(self.accounts_frame, fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), corner_radius=10)
         self.twitch_frame.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
         
-        ctk.CTkLabel(self.twitch_frame, text="Twitch", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=10, pady=10)
-        self.twitch_status = ctk.CTkLabel(self.twitch_frame, text="Checking...", text_color="gray")
-        self.twitch_status.grid(row=0, column=1, padx=10)
+        ctk.CTkLabel(self.twitch_frame, text="Twitch", font=ctk.CTkFont(size=18, weight="bold")).grid(row=0, column=0, padx=20, pady=15)
+        self.twitch_status = ctk.CTkLabel(self.twitch_frame, text="Checking...", font=ctk.CTkFont(weight="bold"), text_color="gray")
+        self.twitch_status.grid(row=0, column=1, padx=20)
         
-        self.btn_twitch_login = ctk.CTkButton(self.twitch_frame, text="Login with Twitch", command=self.login_twitch)
-        self.btn_twitch_login.grid(row=0, column=2, padx=10, pady=10)
+        self.btn_twitch_login = ctk.CTkButton(self.twitch_frame, text="Login with Twitch", command=self.login_twitch, fg_color="#9146FF", hover_color="#772CE8")
+        self.btn_twitch_login.grid(row=0, column=2, padx=10, pady=15)
         
         self.btn_twitch_logout = ctk.CTkButton(self.twitch_frame, text="Logout", command=self.logout_twitch, fg_color="red", hover_color="darkred")
-        self.btn_twitch_logout.grid(row=0, column=3, padx=10, pady=10)
+        self.btn_twitch_logout.grid(row=0, column=3, padx=10, pady=15)
 
-        # YouTube Section
-        self.yt_frame = ctk.CTkFrame(self.accounts_frame)
+        # YouTube Section Card
+        self.yt_frame = ctk.CTkFrame(self.accounts_frame, fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), corner_radius=10)
         self.yt_frame.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
         
-        ctk.CTkLabel(self.yt_frame, text="YouTube", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=10, pady=10)
-        self.yt_status = ctk.CTkLabel(self.yt_frame, text="Checking...", text_color="gray")
-        self.yt_status.grid(row=0, column=1, padx=10)
+        ctk.CTkLabel(self.yt_frame, text="YouTube", font=ctk.CTkFont(size=18, weight="bold")).grid(row=0, column=0, padx=20, pady=15)
+        self.yt_status = ctk.CTkLabel(self.yt_frame, text="Checking...", font=ctk.CTkFont(weight="bold"), text_color="gray")
+        self.yt_status.grid(row=0, column=1, padx=20)
         
-        self.btn_yt_login = ctk.CTkButton(self.yt_frame, text="Login with Google", command=self.login_youtube)
-        self.btn_yt_login.grid(row=0, column=2, padx=10, pady=10)
+        self.btn_yt_login = ctk.CTkButton(self.yt_frame, text="Login with Google", command=self.login_youtube, fg_color="#FF0000", hover_color="#CC0000")
+        self.btn_yt_login.grid(row=0, column=2, padx=10, pady=15)
 
         self.btn_yt_logout = ctk.CTkButton(self.yt_frame, text="Logout", command=self.logout_youtube, fg_color="red", hover_color="darkred")
-        self.btn_yt_logout.grid(row=0, column=3, padx=10, pady=10)
+        self.btn_yt_logout.grid(row=0, column=3, padx=10, pady=15)
         
         # Sync Button
         self.btn_yt_sync = ctk.CTkButton(self.yt_frame, text="Sync Shorts", command=self.sync_shorts, fg_color="#F59E0B", hover_color="#D97706")
-        self.btn_yt_sync.grid(row=0, column=4, padx=10, pady=10)
+        self.btn_yt_sync.grid(row=0, column=4, padx=10, pady=15)
         
         # Overlay URL Info
-        ctk.CTkLabel(self.yt_frame, text="Overlay URL:").grid(row=1, column=0, padx=10, pady=5, sticky="e")
+        ctk.CTkLabel(self.yt_frame, text="Overlay URL:").grid(row=1, column=0, padx=20, pady=(0, 15), sticky="e")
         self.ent_overlay_url = ctk.CTkEntry(self.yt_frame, width=300)
         self.ent_overlay_url.insert(0, "http://localhost:8000/interface/yt_overlay.html")
         self.ent_overlay_url.configure(state="readonly")
-        self.ent_overlay_url.grid(row=1, column=1, columnspan=3, padx=10, pady=5, sticky="ew")
+        self.ent_overlay_url.grid(row=1, column=1, columnspan=3, padx=10, pady=(0, 15), sticky="ew")
         
-        ctk.CTkButton(self.yt_frame, text="Copy", width=60, command=self.copy_overlay_url).grid(row=1, column=4, padx=10, pady=5)
+        ctk.CTkButton(self.yt_frame, text="Copy", width=60, command=self.copy_overlay_url).grid(row=1, column=4, padx=10, pady=(0, 15))
 
 
         self.update_account_status()
@@ -452,34 +458,34 @@ class App(ctk.CTk):
         self.prof_label.grid(row=0, column=0, padx=20, pady=20, sticky="w")
         
         # Helper Text
-        ctk.CTkLabel(self.profiles_frame, text="Profiles allow you to switch between different bot configurations.").grid(row=1, column=0, padx=20, sticky="w")
+        ctk.CTkLabel(self.profiles_frame, text="Profiles allow you to switch between different bot configurations.", text_color="gray").grid(row=1, column=0, padx=20, sticky="w")
         
         # Content Area
-        self.prof_content = ctk.CTkFrame(self.profiles_frame)
+        self.prof_content = ctk.CTkFrame(self.profiles_frame, fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), corner_radius=10)
         self.prof_content.grid(row=2, column=0, padx=20, pady=20, sticky="nsew")
         
         # List
-        self.prof_listbox = ctk.CTkScrollableFrame(self.prof_content, width=300, height=300)
+        self.prof_listbox = ctk.CTkScrollableFrame(self.prof_content, width=300, height=300, fg_color="transparent")
         self.prof_listbox.pack(side="left", fill="y", padx=10, pady=10)
         
         # Controls
         self.prof_controls = ctk.CTkFrame(self.prof_content, fg_color="transparent")
-        self.prof_controls.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+        self.prof_controls.pack(side="left", fill="both", expand=True, padx=20, pady=20)
         
-        ctk.CTkLabel(self.prof_controls, text="Enter Profile Name:").pack(pady=(0,5))
+        ctk.CTkLabel(self.prof_controls, text="Enter Profile Name:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(0,5))
         self.entry_profile = ctk.CTkEntry(self.prof_controls)
         self.entry_profile.pack(pady=5, fill="x")
         
-        self.btn_create_prof = ctk.CTkButton(self.prof_controls, text="Save Current as New Profile", command=self.create_profile)
+        self.btn_create_prof = ctk.CTkButton(self.prof_controls, text="Save Current as New Profile", command=self.create_profile, fg_color="#3B82F6", hover_color="#2563EB")
         self.btn_create_prof.pack(pady=10, fill="x")
         
-        self.btn_save_prof = ctk.CTkButton(self.prof_controls, text="overwrite Selected Profile", fg_color="orange", command=self.save_to_selected_profile)
+        self.btn_save_prof = ctk.CTkButton(self.prof_controls, text="Overwrite Selected Profile", fg_color="#F59E0B", hover_color="#D97706", command=self.save_to_selected_profile)
         self.btn_save_prof.pack(pady=10, fill="x")
         
-        self.btn_load_prof = ctk.CTkButton(self.prof_controls, text="Load Selected Profile", fg_color="green", command=self.load_selected_profile)
+        self.btn_load_prof = ctk.CTkButton(self.prof_controls, text="Load Selected Profile", fg_color="#10B981", hover_color="#059669", command=self.load_selected_profile)
         self.btn_load_prof.pack(pady=10, fill="x")
         
-        self.btn_del_prof = ctk.CTkButton(self.prof_controls, text="Delete Selected Profile", fg_color="red", command=self.delete_selected_profile)
+        self.btn_del_prof = ctk.CTkButton(self.prof_controls, text="Delete Selected Profile", fg_color="#EF4444", hover_color="#DC2626", command=self.delete_selected_profile)
         self.btn_del_prof.pack(pady=10, fill="x")
         
         self.selected_profile_btn = None

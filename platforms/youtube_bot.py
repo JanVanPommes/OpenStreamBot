@@ -78,6 +78,7 @@ class YouTubeBot:
         self.quota = QuotaManager()
         self.chat_cache_file = "youtube_active_chat.json"
         self.min_polling_interval = 15.0 # Aggressive optimization
+        self.seen_users = set() # Track for 'youtube_first_message'
         
         # Register Handler
         print(f"[DEBUG] YouTubeBot Init - Registering Handler")
@@ -162,6 +163,8 @@ class YouTubeBot:
             with open(self.chat_cache_file, 'w') as f:
                 json.dump({"chat_id": chat_id, "timestamp": time.time()}, f)
                 
+            # Session neu gestartet, Liste leeren
+            self.seen_users.clear()
             return chat_id
             
         except Exception as e:
@@ -262,6 +265,17 @@ class YouTubeBot:
             await self.event_server.broadcast("ChatMessage", chat_data)
             print(f"[YouTube] {author}: {msg}")
             
+            # --- FIRST MESSAGE CHECK ---
+            if author not in self.seen_users:
+                self.seen_users.add(author)
+                
+                # Sende spezielles SystemEvent
+                await self.event_server.broadcast("SystemEvent", {
+                    "type": "youtube_first_message",
+                    "user": author,
+                    "message": msg
+                })
+            
             # --- COMMAND TRIGGER ---
             if msg.startswith('!'):
                 cmd_name = msg.split(' ')[0]
@@ -308,6 +322,8 @@ class YouTubeBot:
                     continue
 
             if self.live_chat_id:
+                # Da gecacht geladen wurde, clear wir hier falls Neuschwung
+                self.seen_users.clear()
                 # Starte Polling Loop
                 await self.poll_chat()
                 # Wenn poll_chat returned, ist der Stream wohl vorbei oder Error
