@@ -51,7 +51,7 @@ async def perform_twitch_oauth_flow(client_id, client_secret, redirect_uri="http
     await site.start()
 
     # Browser öffnen
-    scope = "chat:read+chat:edit+channel:read:redemptions+channel:manage:redemptions" 
+    scope = "chat:read+chat:edit+channel:read:redemptions+channel:manage:redemptions+clips:edit" 
     auth_url = (f"https://id.twitch.tv/oauth2/authorize?response_type=code&client_id={client_id}"
                 f"&redirect_uri={redirect_uri}&scope={scope}")
     
@@ -83,7 +83,7 @@ async def perform_twitch_oauth_flow(client_id, client_secret, redirect_uri="http
     }
     
     async with ClientSession() as session:
-        async with session.post(token_url, params=params) as resp:
+        async with session.post(token_url, data=params) as resp:
             if resp.status == 200:
                 return await resp.json()
             else:
@@ -112,7 +112,7 @@ async def refresh_twitch_token(client_id, client_secret, refresh_token):
         "client_secret": client_secret
     }
     async with ClientSession() as session:
-        async with session.post(url, params=params) as resp:
+        async with session.post(url, data=params) as resp:
             if resp.status == 200:
                 return await resp.json()
             else:

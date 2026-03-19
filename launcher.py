@@ -32,7 +32,7 @@ ctk.set_default_color_theme("blue")
 CONFIG_FILE = "config.yaml"
 # Nutze nun den internen Webserver statt Datei-Pfad
 DASHBOARD_URL = "http://localhost:8000/interface/dashboard.html"
-VERSION = "0.3.3"
+VERSION = "0.3.4"
 
 class ConsoleRedirector:
     def __init__(self, text_widget, queue):

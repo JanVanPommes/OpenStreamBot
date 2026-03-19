@@ -99,6 +99,21 @@ class RewardEditorFrame(ctk.CTkFrame):
             
             if resp.status_code == 200:
                 self.rewards = resp.json().get('data', [])
+                
+                # --- UPDATE ACTION TRIGGER LOCALLY ---
+                try:
+                    simplified = []
+                    for r in self.rewards:
+                        simplified.append({
+                            "title": r['title'],
+                            "id": r['id'],
+                            "cost": r['cost']
+                        })
+                    with open("available_rewards.json", "w", encoding="utf-8") as f:
+                        json.dump(simplified, f, ensure_ascii=False, indent=4)
+                except Exception as e:
+                    print(f"Failed to update available_rewards.json: {e}")
+                
                 self.after(0, self.update_ui_list)
             elif resp.status_code == 401:
                 self.after(0, lambda: messagebox.showerror("Auth Error", "Token invalid or missing scope 'channel:manage:redemptions'."))

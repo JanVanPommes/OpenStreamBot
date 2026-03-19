@@ -345,8 +345,8 @@ class TwitchBot(commands.Bot):
                             "cost": r['cost']
                         })
                     
-                    with open("available_rewards.json", "w") as f:
-                        json.dump(simplified, f)
+                    with open("available_rewards.json", "w", encoding="utf-8") as f:
+                        json.dump(simplified, f, ensure_ascii=False, indent=4)
                         
                     print(f"[Twitch] {len(simplified)} Rewards gespeichert.")
                     # Broadcast update event to dashboard/GUI

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.4 Beta] - 2026-03-19
+### Fixed
+- **Action Editor UI**: Increased the height of the Trigger Dialog to ensure the "Add/Save" button is fully visible.
+- **Twitch Clip Scope**: Added the missing `clips:edit` scope to the Twitch authentication flow to fix permission errors.
+- **Twitch Authentication Persistence**: Fixed a bug where a PC restart would cause Twitch authentication to fail by correcting the OAuth token payload format.
+
 ## [0.3.3 Beta] - 2026-02-22
 ### Added
 - **Action Groups**: New sub-action (`random_action_group`) to randomly select and execute one of several nested sub-actions based on configurable probabilities. Perfect for diverse random responses.

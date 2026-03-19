@@ -1228,7 +1228,7 @@ class TriggerDialog(ctk.CTkToplevel):
     def __init__(self, parent, initial_data=None):
         super().__init__(parent)
         self.title("Edit Trigger" if initial_data else "Add Trigger")
-        self.geometry("350x300")
+        self.geometry("400x450")
         self.result = None
         self.initial_data = initial_data or {}
         
@@ -1349,7 +1349,7 @@ class TriggerDialog(ctk.CTkToplevel):
                 import os, json
                 if os.path.exists("available_rewards.json"):
                     try:
-                        with open("available_rewards.json", "r") as f:
+                        with open("available_rewards.json", "r", encoding="utf-8") as f:
                             data = json.load(f)
                             return [r['title'] for r in data]
                     except: return []
