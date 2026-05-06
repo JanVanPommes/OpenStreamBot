@@ -3,6 +3,7 @@ import json
 import asyncio
 import webbrowser
 from aiohttp import web, ClientSession
+import aiohttp
 
 # --- TWITCH AUTH ---
 
@@ -99,7 +100,9 @@ async def validate_twitch_token(access_token):
                 if resp.status == 200:
                     return await resp.json() # Enthält 'expires_in', 'login', etc.
                 return None
-    except:
+    except aiohttp.ClientError as e:
+        raise ConnectionError(f"Netzwerkfehler: {e}")
+    except Exception:
         return None
 
 async def refresh_twitch_token(client_id, client_secret, refresh_token):
@@ -111,13 +114,16 @@ async def refresh_twitch_token(client_id, client_secret, refresh_token):
         "client_id": client_id,
         "client_secret": client_secret
     }
-    async with ClientSession() as session:
-        async with session.post(url, data=params) as resp:
-            if resp.status == 200:
-                return await resp.json()
-            else:
-                text = await resp.text()
-                raise Exception(f"Token Refresh fehlgeschlagen: {text}")
+    try:
+        async with ClientSession() as session:
+            async with session.post(url, data=params) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                else:
+                    text = await resp.text()
+                    raise Exception(f"Token Refresh fehlgeschlagen: {text}")
+    except aiohttp.ClientError as e:
+        raise ConnectionError(f"Netzwerkfehler: {e}")
 
 # --- YOUTUBE AUTH ---
 

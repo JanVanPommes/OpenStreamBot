@@ -1,6 +1,6 @@
 # OpenStreamBot
 
-**Version:** 0.3.4  
+**Version:** 0.4.0  
 **Author:** JanVanPommes  
 **A Multi-Platform Stream Bot for Twitch & YouTube**
 
@@ -22,6 +22,8 @@ OpenStreamBot is an open-source bot for streamers that integrates Twitch and You
   - **New:** Channel Points (Trigger & Management)
   - **New:** User Permissions (Mod/VIP/Sub only commands)
   - **New:** HotSwitch (Instant Action Toggling)
+  - **New in 0.4.0:** ElevenLabs TTS Integration (Text-to-Speech)
+  - **New in 0.4.0:** Network-aware Twitch Authentication (Offline boot support)
   - **New in 0.3.3:** YouTube First Words & User Blacklist
   - **New in 0.3.3:** Action Groups (Nested Probability Sub-actions)
   - **New in 0.3.3:** Modernized GUI "Card" Layout

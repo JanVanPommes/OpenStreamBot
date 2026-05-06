@@ -40,34 +40,43 @@ async def setup_twitch_token(config):
         refresh_token = creds.get('refresh_token')
         
         if access_token:
-            print("[Twitch] Prüfe Token-Gültigkeit...")
-            validation = await validate_twitch_token(access_token)
-            
-            if validation:
-                print(f"[Twitch] Token ist gültig (Expires in: {validation.get('expires_in')}s)")
-                return access_token
-            else:
-                print("[Twitch] Token abgelaufen oder ungültig.")
-                
-                # Versuche Refresh
-                if refresh_token:
-                    print("[Twitch] Versuche Token-Refresh...")
-                    try:
-                        new_creds = await refresh_twitch_token(client_id, client_secret, refresh_token)
+            while True:
+                try:
+                    print("[Twitch] Prüfe Token-Gültigkeit...")
+                    validation = await validate_twitch_token(access_token)
+                    
+                    if validation:
+                        print(f"[Twitch] Token ist gültig (Expires in: {validation.get('expires_in')}s)")
+                        return access_token
+                    else:
+                        print("[Twitch] Token abgelaufen oder ungültig.")
                         
-                        # Neue Daten speichern (Merge old creds to keep refresh_token if not in new)
-                        updated_creds = creds.copy()
-                        updated_creds.update(new_creds)
-                        
-                        with open(token_file, 'w') as f:
-                            json.dump(updated_creds, f)
+                        # Versuche Refresh
+                        if refresh_token:
+                            print("[Twitch] Versuche Token-Refresh...")
+                            new_creds = await refresh_twitch_token(client_id, client_secret, refresh_token)
                             
-                        print("[Twitch] Token erfolgreich aktualisiert!")
-                        return new_creds.get('access_token')
-                    except Exception as e:
-                        print(f"[Twitch] Refresh fehlgeschlagen: {e}")
-                else:
-                    print("[Twitch] Kein Refresh Token vorhanden.")
+                            # Neue Daten speichern (Merge old creds to keep refresh_token if not in new)
+                            updated_creds = creds.copy()
+                            updated_creds.update(new_creds)
+                            
+                            with open(token_file, 'w') as f:
+                                json.dump(updated_creds, f)
+                                
+                            print("[Twitch] Token erfolgreich aktualisiert!")
+                            return new_creds.get('access_token')
+                        else:
+                            print("[Twitch] Kein Refresh Token vorhanden.")
+                            break
+                except ConnectionError as e:
+                    print(f"[Twitch] Netzwerkfehler beim Token-Check. Warte 5 Sekunden auf Internetverbindung...")
+                    await asyncio.sleep(5)
+                except Exception as e:
+                    print(f"[Twitch] Token Refresh fehlgeschlagen: {e}")
+                    import traceback
+                    with open("twitch_auth_error.log", "w") as f:
+                        f.write(traceback.format_exc())
+                    break
     
     # Fallback: Neuer Browser Login, wenn alles fehlschlägt
     print("[Twitch] Kein gültiger Token. Starte Browser-Login...")
@@ -494,7 +503,8 @@ class TwitchBot(commands.Bot):
             "color": color, 
             "timestamp": str(datetime.datetime.now()),
             "emotes": emotes,
-            "badges": msg_badges
+            "badges": msg_badges,
+            "is_first_message": author_name.lower() not in self.seen_users
         }
 
         # 3. An alle WebSocket-Clients senden (Overlays empfangen das jetzt!)

@@ -11,12 +11,13 @@ import pygame._sdl2.audio as sdl_audio
 logger = logging.getLogger("ActionEngine")
 
 class ActionEngine:
-    def __init__(self, config_file="actions.yaml", event_server=None, obs_controller=None, twitch_bot=None, youtube_bot=None):
+    def __init__(self, config_file="actions.yaml", event_server=None, obs_controller=None, twitch_bot=None, youtube_bot=None, elevenlabs_tts=None):
         self.config_file = config_file
         self.event_server = event_server
         self.obs = obs_controller
         self.twitch = twitch_bot
         self.youtube = youtube_bot
+        self.elevenlabs = elevenlabs_tts
         self.actions = []
         
         self.timer_tasks = []
@@ -34,6 +35,10 @@ class ActionEngine:
         # Register Handlers
         if self.event_server:
             self.event_server.add_message_handler(self.on_ws_message)
+
+        # Action Queue
+        self.action_queue = asyncio.Queue()
+        self.queue_task = asyncio.create_task(self.action_queue_worker())
 
         self.load_actions()
 
@@ -279,9 +284,11 @@ class ActionEngine:
             evt_title = data.get('reward_title', '').lower()
             
             if req_title == evt_title:
+                msg = data.get('input', '')
                 return True, {
                     "user": data.get('user', ''),
-                    "input": data.get('input', '')
+                    "input": msg,
+                    "message": msg
                 }
             return False, {}
 
@@ -380,7 +387,21 @@ class ActionEngine:
 
         return True, {}
 
+    async def action_queue_worker(self):
+        while True:
+            action, context_data = await self.action_queue.get()
+            try:
+                print(f"[Action Queue] Executing action: {action.get('name', 'Unknown')}")
+                await self._execute_action_blocking(action, context_data)
+            except Exception as e:
+                print(f"[Action Queue] Error: {e}")
+            finally:
+                self.action_queue.task_done()
+
     async def execute_action(self, action, context_data):
+        await self.action_queue.put((action, context_data))
+
+    async def _execute_action_blocking(self, action, context_data):
         sub_actions = action.get('sub_actions', [])
         
         # Safe copy of context for variable replacement
@@ -435,6 +456,45 @@ class ActionEngine:
                 # Assuming bot handles channel sending internally
                 if self.twitch.connected_channels:
                     await self.twitch.connected_channels[0].send(msg)
+
+        elif sa_type == "youtube_chat":
+            msg_raw = config.get('message', '')
+            msg = self.replace_vars(msg_raw, ctx)
+            if self.youtube:
+                await self.youtube.send_chat_message(msg)
+
+        elif sa_type == "twitch_command":
+            if self.twitch and self.twitch.connected_channels:
+                cmd = config.get('command', 'Announce')
+                target = self.replace_vars(config.get('target', ''), ctx).strip('@')
+                message = self.replace_vars(config.get('message', ''), ctx)
+                channel = self.twitch.connected_channels[0]
+                
+                try:
+                    if cmd == "Announce":
+                        await channel.send(f"/announce {message}")
+                    elif cmd == "Shoutout":
+                        await channel.send(f"/shoutout {target}")
+                    elif cmd == "Ban":
+                        await channel.send(f"/ban {target} {message}")
+                    elif cmd == "Timeout":
+                        duration = 600
+                        try: duration = int(message)
+                        except: pass
+                        await channel.send(f"/timeout {target} {duration}")
+                    elif cmd == "VIP":
+                        await channel.send(f"/vip {target}")
+                    elif cmd == "Un-VIP":
+                        await channel.send(f"/unvip {target}")
+                    elif cmd == "Commercial":
+                        duration = 30
+                        try: duration = int(message)
+                        except: pass
+                        await channel.send(f"/commercial {duration}")
+                    else:
+                        print(f"[ActionEngine] Unknown Twitch Command: {cmd}")
+                except Exception as e:
+                    print(f"[ActionEngine] Error executing Twitch Command {cmd}: {e}")
 
         # --- TWITCH CLIPS ---
         elif sa_type == "twitch_create_clip":
@@ -572,10 +632,44 @@ class ActionEngine:
             final_vol = self.vol_sfx * base_vol
             
             if os.path.exists(file_path):
-                 # Run in thread to not block loop
-                 await asyncio.to_thread(self.play_sound_sync, file_path, device, final_vol)
+                 duration = await asyncio.to_thread(self.play_sound_sync, file_path, device, final_vol)
+                 if duration and duration > 0:
+                     await asyncio.sleep(duration + 0.1) # Queue blocking
             else:
                 print(f"[ActionError] Sound file not found: {file_path}")
+
+        elif sa_type == "elevenlabs_tts":
+            if self.elevenlabs:
+                text = self.replace_vars(config.get('text', ''), ctx)
+                voice_id = self.replace_vars(config.get('voice_id', ''), ctx)
+                device = config.get('device', None)
+                base_vol = float(config.get('volume', 100)) / 100.0
+                
+                final_vol = self.vol_sfx * base_vol
+                
+                print(f"[ActionEngine] Generating TTS for: {text}")
+                path = await self.elevenlabs.generate_tts(text, voice_id)
+                
+                if path and os.path.exists(path):
+                     # Getting duration and playing
+                     duration = await asyncio.to_thread(self.play_sound_sync, path, device, final_vol)
+                     
+                     # Async cleanup task
+                     async def cleanup():
+                          await asyncio.sleep(2.0) # Wait a bit extra before delete
+                          try:
+                              os.remove(path)
+                              print(f"[ActionEngine] Deleted TTS temp file: {path}")
+                          except Exception as e:
+                              print(f"[ActionEngine] Failed to delete TTS file: {e}")
+                     asyncio.create_task(cleanup())
+                     
+                     if duration and duration > 0:
+                         await asyncio.sleep(duration + 0.1) # Queue blocking
+                else:
+                     print("[ActionError] Failed to generate TTS audio.")
+            else:
+                print("[ActionError] Elevenlabs TTS not configured/enabled.")
 
         elif sa_type == "stop_sounds":
             if sa.get_init():
@@ -809,9 +903,11 @@ class ActionEngine:
             
             # We don't block here anymore because Sound.play is fire-and-forget
             # This allows multiple sounds to play at once!
+            return sound.get_length()
             
         except Exception as e:
             print(f"[Sound Error] Failed to play {os.path.basename(path)}: {e}")
             # Hint for the user
             if "mpg123" in str(e) or "unrecognized" in str(e):
                  print("[Hint] The file might be corrupted or renamed incorrectly (e.g. mp3 extension on a wav file). Try converting it.")
+            return 0.0

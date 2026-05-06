@@ -258,7 +258,8 @@ class YouTubeBot:
                 "color": color, # Fallback Farbe für YT
                 "timestamp": str(datetime.datetime.now()), # oder echtes Datum parsen
                 "emotes": [], # YT Emotes parsen ist komplexer, erst mal raw text
-                "badges": badges
+                "badges": badges,
+                "is_first_message": author not in self.seen_users
             }
             
             # An Dashboard senden

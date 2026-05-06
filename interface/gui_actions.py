@@ -503,8 +503,7 @@ class SubActionDialog(ctk.CTkToplevel):
         self.type_var = ctk.StringVar(value=start_type)
         
         
-        # Sort and unique
-        sub_types = sorted(list(set(["twitch_chat", "delay", "log", "play_sound", "stop_sounds", "playlist", "stop_playlist", "obs_set_scene", "youtube_random_short", "trigger_action", "set_volume", "set_action_state", "twitch_create_clip", "execute_csharp", "random_action_group"])))
+        sub_types = sorted(list(set(["twitch_chat", "youtube_chat", "twitch_command", "delay", "log", "play_sound", "stop_sounds", "playlist", "stop_playlist", "obs_set_scene", "youtube_random_short", "trigger_action", "set_volume", "set_action_state", "twitch_create_clip", "execute_csharp", "random_action_group", "elevenlabs_tts"])))
         
         self.combo = ctk.CTkComboBox(self, variable=self.type_var, 
                                      values=sub_types,
@@ -569,11 +568,37 @@ class SubActionDialog(ctk.CTkToplevel):
             self.widgets['device'] = dev_var
 
         if choice == "twitch_chat":
-            ctk.CTkLabel(self.frame_config, text="Chat Message:").pack(anchor="w")
+            ctk.CTkLabel(self.frame_config, text="Twitch Chat Message:").pack(anchor="w")
             entry = ctk.CTkEntry(self.frame_config)
             entry.insert(0, get_val('message'))
             entry.pack(fill="x", pady=5)
             self.widgets['message'] = entry
+            
+        elif choice == "youtube_chat":
+            ctk.CTkLabel(self.frame_config, text="YouTube Chat Message:").pack(anchor="w")
+            entry = ctk.CTkEntry(self.frame_config)
+            entry.insert(0, get_val('message'))
+            entry.pack(fill="x", pady=5)
+            self.widgets['message'] = entry
+            
+        elif choice == "twitch_command":
+            ctk.CTkLabel(self.frame_config, text="Command:").pack(anchor="w")
+            cmd_var = ctk.StringVar(value=get_val('command', 'Announce'))
+            cmd_combo = ctk.CTkComboBox(self.frame_config, variable=cmd_var, values=["Announce", "Shoutout", "Ban", "Timeout", "VIP", "Un-VIP", "Commercial"])
+            cmd_combo.pack(fill="x", pady=5)
+            self.widgets['command'] = cmd_var
+            
+            ctk.CTkLabel(self.frame_config, text="Target User (e.g. %user%):").pack(anchor="w")
+            target_entry = ctk.CTkEntry(self.frame_config)
+            target_entry.insert(0, get_val('target'))
+            target_entry.pack(fill="x", pady=5)
+            self.widgets['target'] = target_entry
+            
+            ctk.CTkLabel(self.frame_config, text="Message / Reason / Duration:").pack(anchor="w")
+            msg_entry = ctk.CTkEntry(self.frame_config)
+            msg_entry.insert(0, get_val('message'))
+            msg_entry.pack(fill="x", pady=5)
+            self.widgets['message'] = msg_entry
             
         elif choice == "log":
             ctk.CTkLabel(self.frame_config, text="Log Message:").pack(anchor="w")
@@ -725,6 +750,31 @@ class SubActionDialog(ctk.CTkToplevel):
             lbl_val = ctk.CTkLabel(self.frame_config, text=f"{int(init_val)}%")
             lbl_val.pack(anchor="n")
 
+        elif choice == "elevenlabs_tts":
+            ctk.CTkLabel(self.frame_config, text="Text (+ Variables):").pack(anchor="w")
+            entry = ctk.CTkEntry(self.frame_config)
+            entry.insert(0, get_val('text'))
+            entry.pack(fill="x", pady=5)
+            self.widgets['text'] = entry
+
+            ctk.CTkLabel(self.frame_config, text="Voice ID:").pack(anchor="w")
+            v_entry = ctk.CTkEntry(self.frame_config)
+            v_entry.insert(0, get_val('voice_id'))
+            v_entry.pack(fill="x", pady=5)
+            self.widgets['voice_id'] = v_entry
+            
+            add_device_selector()
+            
+            ctk.CTkLabel(self.frame_config, text="Volume (0-100%):").pack(anchor="w", pady=(10,0))
+            def update_vol_lbl(val): lbl_vol.configure(text=f"{int(val)}%")
+            init_vol = float(get_val('volume', '100'))
+            slider = ctk.CTkSlider(self.frame_config, from_=0, to=100, number_of_steps=100, command=update_vol_lbl)
+            slider.set(init_vol)
+            slider.pack(fill="x", pady=5)
+            self.widgets['volume_slider'] = slider
+            lbl_vol = ctk.CTkLabel(self.frame_config, text=f"{int(init_vol)}%")
+            lbl_vol.pack(anchor="n")
+
         elif choice == "twitch_create_clip":
              ctk.CTkLabel(self.frame_config, text="Post Clip link to Chat?").pack(anchor="w")
              # Default True
@@ -756,6 +806,10 @@ class SubActionDialog(ctk.CTkToplevel):
         try:
             if 'message' in self.widgets:
                 res['message'] = self.widgets['message'].get()
+            if 'text' in self.widgets:
+                res['text'] = self.widgets['text'].get()
+            if 'voice_id' in self.widgets:
+                res['voice_id'] = self.widgets['voice_id'].get()
             if 'ms' in self.widgets:
                  res['ms'] = int(self.widgets['ms'].get())
             if 'file' in self.widgets:
@@ -988,6 +1042,31 @@ class SubActionDialog(ctk.CTkToplevel):
             lbl_val = ctk.CTkLabel(self.frame_config, text=f"{int(init_val)}%")
             lbl_val.pack(anchor="n")
 
+        elif choice == "elevenlabs_tts":
+            ctk.CTkLabel(self.frame_config, text="Text (+ Variables):").pack(anchor="w")
+            entry = ctk.CTkEntry(self.frame_config)
+            entry.insert(0, get_val('text'))
+            entry.pack(fill="x", pady=5)
+            self.widgets['text'] = entry
+
+            ctk.CTkLabel(self.frame_config, text="Voice ID:").pack(anchor="w")
+            v_entry = ctk.CTkEntry(self.frame_config)
+            v_entry.insert(0, get_val('voice_id'))
+            v_entry.pack(fill="x", pady=5)
+            self.widgets['voice_id'] = v_entry
+            
+            add_device_selector()
+            
+            ctk.CTkLabel(self.frame_config, text="Volume (0-100%):").pack(anchor="w", pady=(10,0))
+            def update_vol_lbl(val): lbl_vol.configure(text=f"{int(val)}%")
+            init_vol = float(get_val('volume', '100'))
+            slider = ctk.CTkSlider(self.frame_config, from_=0, to=100, number_of_steps=100, command=update_vol_lbl)
+            slider.set(init_vol)
+            slider.pack(fill="x", pady=5)
+            self.widgets['volume_slider'] = slider
+            lbl_vol = ctk.CTkLabel(self.frame_config, text=f"{int(init_vol)}%")
+            lbl_vol.pack(anchor="n")
+
         elif choice == "twitch_create_clip":
              ctk.CTkLabel(self.frame_config, text="Post Clip link to Chat?").pack(anchor="w")
              # Default True
@@ -1154,6 +1233,12 @@ class SubActionDialog(ctk.CTkToplevel):
         try:
             if 'message' in self.widgets:
                 res['message'] = self.widgets['message'].get()
+            if 'text' in self.widgets:
+                res['text'] = self.widgets['text'].get()
+            if 'command' in self.widgets:
+                res['command'] = self.widgets['command'].get()
+            if 'voice_id' in self.widgets:
+                res['voice_id'] = self.widgets['voice_id'].get()
             if 'ms' in self.widgets:
                  res['ms'] = int(self.widgets['ms'].get())
             if 'file' in self.widgets:

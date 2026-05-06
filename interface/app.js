@@ -54,6 +54,9 @@ function connect() {
         } else if (data.event === "BotStatus") {
             addSystemMessage(`Status: ${data.data.status}`);
         } else if (data.event === "SystemEvent") {
+            if (data.data.type === "twitch_first_message" || data.data.type === "youtube_first_message") {
+                return; // Ignoriert für Chat-Ansicht, da ChatMessage markiert wird
+            }
             addSystemEvent(data.data);
         } else if (data.event === "BadgeMapping") {
             badgeMap = data.data;
@@ -107,9 +110,15 @@ function addChatMessage(msgData) {
         // platformIcon = '<span style="color:red; margin-right:4px;">▶</span>'; 
     }
 
+    let firstMessageBadge = "";
+    if (msgData.is_first_message) {
+        firstMessageBadge = `<span style="background-color: #ffd700; color: #000; padding: 2px 4px; border-radius: 4px; font-size: 0.8em; margin-right: 5px; font-weight: bold;" title="Erste Nachricht heute">FIRST</span>`;
+    }
+
     div.innerHTML = `
         <span class="timestamp">${time}</span>
         <span class="badges">${badgesHtml}</span>
+        ${firstMessageBadge}
         <span class="username" style="color: ${userColor}">${platformIcon}${msgData.user}:</span>
         <span class="text">${processedMessage}</span>
     `;

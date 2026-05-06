@@ -62,15 +62,26 @@ class RewardEditorFrame(ctk.CTkFrame):
             "Client-Id": self.client_id,
             "Authorization": f"Bearer {self.token}"
         }
-        try:
-            resp = requests.get("https://api.twitch.tv/helix/users", headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
-                if data['data']:
-                    self.broadcaster_id = data['data'][0]['id']
-                    return self.broadcaster_id
-        except Exception as e:
-            print(f"Error fetching user ID: {e}")
+        
+        import time
+        for attempt in range(6):
+            try:
+                resp = requests.get("https://api.twitch.tv/helix/users", headers=headers, timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data['data']:
+                        self.broadcaster_id = data['data'][0]['id']
+                        return self.broadcaster_id
+                elif resp.status_code == 401:
+                    print("[Rewards] Token invalid or expired.")
+                    return None
+            except requests.exceptions.ConnectionError:
+                print(f"[Rewards] Network error fetching Broadcaster ID. Retrying in 5s... ({attempt+1}/6)")
+                time.sleep(5)
+            except Exception as e:
+                print(f"[Rewards] Error fetching user ID: {e}")
+                return None
+                
         return None
 
     def refresh_rewards(self):
@@ -85,7 +96,7 @@ class RewardEditorFrame(ctk.CTkFrame):
         bid = self.get_broadcaster_id()
         
         if not bid:
-            self.after(0, lambda: messagebox.showerror("Error", "Could not fetch Broadcaster ID.\nCheck Twitch Login."))
+            self.after(0, self.show_error_in_ui, "Could not fetch Broadcaster ID.\nWait for Bot to start (auto-refresh) or check Login.")
             return
 
         headers = {
@@ -116,12 +127,17 @@ class RewardEditorFrame(ctk.CTkFrame):
                 
                 self.after(0, self.update_ui_list)
             elif resp.status_code == 401:
-                self.after(0, lambda: messagebox.showerror("Auth Error", "Token invalid or missing scope 'channel:manage:redemptions'."))
+                self.after(0, self.show_error_in_ui, "Token expired.\nPlease start the bot to auto-refresh the token,\nthen click 'Refresh' here.")
             else:
-                self.after(0, lambda: messagebox.showerror("API Error", f"Status: {resp.status_code}\n{resp.text}"))
+                self.after(0, self.show_error_in_ui, f"API Error: {resp.status_code}\n{resp.text}")
                 
         except Exception as e:
-            self.after(0, lambda: messagebox.showerror("Error", str(e)))
+            self.after(0, self.show_error_in_ui, f"Error: {str(e)}")
+
+    def show_error_in_ui(self, msg):
+        for w in self.scroll_frame.winfo_children(): w.destroy()
+        lbl = ctk.CTkLabel(self.scroll_frame, text=msg, text_color="red")
+        lbl.pack(pady=20)
 
     def update_ui_list(self):
         for w in self.scroll_frame.winfo_children(): w.destroy()

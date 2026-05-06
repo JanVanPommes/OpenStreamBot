@@ -18,3 +18,8 @@ obs:
   host: localhost
   port: 4455
   password: ''  # Leave empty if no password set
+
+elevenlabs:
+  enabled: false
+  api_key: ""
+  max_chars: 200

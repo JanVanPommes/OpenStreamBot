@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0] - 2026-05-06
+### Added
+- **ElevenLabs TTS**: New sub-action to generate and play text-to-speech using the ElevenLabs API.
+
+### Fixed
+- **Twitch Authentication**: Resolved a recurring authentication bug that forced a Twitch re-login on system startup. Implemented network-aware token validation to gracefully handle offline boots and prevent "Could not fetch Broadcaster ID" errors.
+- **OBS Browser Docks**: Fully resolved UI caching issues when loading the dashboard in OBS browser docks.
+
 ## [0.3.4 Beta] - 2026-03-19
 ### Fixed
 - **Action Editor UI**: Increased the height of the Trigger Dialog to ensure the "Add/Save" button is fully visible.

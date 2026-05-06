@@ -128,8 +128,16 @@ async def main():
     # obs_ctrl.connect() 
 
     
+    # Elevenlabs TTS
+    elevenlabs_tts = None
+    if cfg.get('elevenlabs', {}).get('enabled', False):
+        from platforms.elevenlabs_tts import ElevenLabsTTS
+        api_key = cfg['elevenlabs'].get('api_key', '')
+        max_chars = cfg['elevenlabs'].get('max_chars', 200)
+        elevenlabs_tts = ElevenLabsTTS(api_key, max_chars)
+
     # Action Engine initialization
-    action_engine = ActionEngine("actions.yaml", ws_server, obs_ctrl)
+    action_engine = ActionEngine("actions.yaml", ws_server, obs_ctrl, elevenlabs_tts=elevenlabs_tts)
     
     # Connect Engine to OBS
     obs_ctrl.action_engine = action_engine

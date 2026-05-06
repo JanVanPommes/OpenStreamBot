@@ -32,7 +32,7 @@ ctk.set_default_color_theme("blue")
 CONFIG_FILE = "config.yaml"
 # Nutze nun den internen Webserver statt Datei-Pfad
 DASHBOARD_URL = "http://localhost:8000/interface/dashboard.html"
-VERSION = "0.3.4"
+VERSION = "0.4.0"
 
 class ConsoleRedirector:
     def __init__(self, text_widget, queue):
@@ -119,15 +119,18 @@ class App(ctk.CTk):
         self.sidebar_button_5 = ctk.CTkButton(self.sidebar_frame, text="Profiles", height=40, font=ctk.CTkFont(weight="bold"), fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), text_color=("gray10", "gray90"), hover_color=("gray70", "#4D4D4D"), command=self.show_profiles_frame)
         self.sidebar_button_5.grid(row=7, column=0, padx=15, pady=8, sticky="ew")
 
+        self.sidebar_button_elevenlabs = ctk.CTkButton(self.sidebar_frame, text="Elevenlabs", height=40, font=ctk.CTkFont(weight="bold"), fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), text_color=("gray10", "gray90"), hover_color=("gray70", "#4D4D4D"), command=self.show_elevenlabs_frame)
+        self.sidebar_button_elevenlabs.grid(row=8, column=0, padx=15, pady=8, sticky="ew")
+
         self.status_label = ctk.CTkLabel(self.sidebar_frame, text="Status: Bot Offline", text_color="gray")
-        self.status_label.grid(row=8, column=0, padx=20, pady=(10, 0))
+        self.status_label.grid(row=9, column=0, padx=20, pady=(10, 0))
 
         self.obs_status_label = ctk.CTkLabel(self.sidebar_frame, text="OBS: Offline", text_color="gray")
-        self.obs_status_label.grid(row=9, column=0, padx=20, pady=(0, 20))
+        self.obs_status_label.grid(row=10, column=0, padx=20, pady=(0, 10))
 
         # Version Label
         self.version_label = ctk.CTkLabel(self.sidebar_frame, text=f"v{VERSION}", text_color="gray40", font=ctk.CTkFont(size=10))
-        self.version_label.grid(row=10, column=0, padx=20, pady=(0, 10), sticky="s")
+        self.version_label.grid(row=11, column=0, padx=20, pady=(0, 10), sticky="s")
 
         # Start status monitoring thread
         self.status_thread = threading.Thread(target=self.status_monitor, daemon=True)
@@ -144,6 +147,8 @@ class App(ctk.CTk):
         self.setup_accounts_frame()
         self.actions_frame = ActionEditorFrame(self) # New Editor Frame
         self.rewards_frame = RewardEditorFrame(self) # New Rewards Frame
+        self.elevenlabs_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        self.setup_elevenlabs_frame()
         self.profiles_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.setup_profiles_frame()
 
@@ -400,58 +405,47 @@ class App(ctk.CTk):
             os.remove("token_youtube.json")
             self.update_account_status()
 
-    def show_dashboard_frame(self):
+    def _hide_all_frames(self):
+        self.dashboard_frame.grid_forget()
         self.settings_frame.grid_forget()
         self.accounts_frame.grid_forget()
         self.actions_frame.grid_forget()
         self.rewards_frame.grid_forget()
         self.profiles_frame.grid_forget()
+        if hasattr(self, 'elevenlabs_frame'): self.elevenlabs_frame.grid_forget()
+
+    def show_dashboard_frame(self):
+        self._hide_all_frames()
         self.dashboard_frame.grid(row=0, column=1, sticky="nsew")
 
     def show_settings_frame(self):
-        self.dashboard_frame.grid_forget()
-        self.accounts_frame.grid_forget()
-        self.actions_frame.grid_forget()
-        self.rewards_frame.grid_forget()
-        self.profiles_frame.grid_forget()
+        self._hide_all_frames()
         self.settings_frame.grid(row=0, column=1, sticky="nsew")
         self.load_config_to_ui()
 
     def show_accounts_frame(self):
-        self.dashboard_frame.grid_forget()
-        self.settings_frame.grid_forget()
-        self.actions_frame.grid_forget()
-        self.rewards_frame.grid_forget()
-        self.profiles_frame.grid_forget()
+        self._hide_all_frames()
         self.accounts_frame.grid(row=0, column=1, sticky="nsew")
         self.update_account_status()
 
     def show_actions_frame(self):
-        self.dashboard_frame.grid_forget()
-        self.settings_frame.grid_forget()
-        self.accounts_frame.grid_forget()
-        self.rewards_frame.grid_forget()
-        self.profiles_frame.grid_forget()
+        self._hide_all_frames()
         self.actions_frame.grid(row=0, column=1, sticky="nsew")
 
     def show_rewards_frame(self):
-        self.dashboard_frame.grid_forget()
-        self.settings_frame.grid_forget()
-        self.accounts_frame.grid_forget()
-        self.actions_frame.grid_forget()
-        self.profiles_frame.grid_forget()
+        self._hide_all_frames()
         self.rewards_frame.grid(row=0, column=1, sticky="nsew")
         self.rewards_frame.load_creds() # Refresh creds if changed
         self.rewards_frame.refresh_rewards() # Refresh list
 
     def show_profiles_frame(self):
-        self.dashboard_frame.grid_forget()
-        self.settings_frame.grid_forget()
-        self.accounts_frame.grid_forget()
-        self.actions_frame.grid_forget()
-        self.rewards_frame.grid_forget()
+        self._hide_all_frames()
         self.profiles_frame.grid(row=0, column=1, sticky="nsew")
         self.refresh_profile_list()
+
+    def show_elevenlabs_frame(self):
+        self._hide_all_frames()
+        self.elevenlabs_frame.grid(row=0, column=1, sticky="nsew")
 
     def setup_profiles_frame(self):
         self.prof_label = ctk.CTkLabel(self.profiles_frame, text="Profile Manager", font=ctk.CTkFont(size=24, weight="bold"))
@@ -826,6 +820,105 @@ class App(ctk.CTk):
     def on_closing(self):
         self.stop_bot()
         self.destroy()
+
+    def setup_elevenlabs_frame(self):
+        self.el_label = ctk.CTkLabel(self.elevenlabs_frame, text="Elevenlabs Configuration", font=ctk.CTkFont(size=24, weight="bold"))
+        self.el_label.grid(row=0, column=0, padx=20, pady=20, sticky="w")
+        
+        # Config section
+        self.el_config = ctk.CTkFrame(self.elevenlabs_frame, fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), corner_radius=10)
+        self.el_config.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
+
+        # Config Read/Set Initial Check state
+        is_enabled = False
+        api_key_val = ""
+        max_chars_val = "200"
+
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                 cfg = yaml.safe_load(f)
+                 el = cfg.get('elevenlabs', {})
+                 is_enabled = el.get('enabled', False)
+                 api_key_val = el.get('api_key', '')
+                 max_chars_val = str(el.get('max_chars', '200'))
+        except:
+            pass
+
+        self.chkbx_elevenlabs_enabled = ctk.CTkCheckBox(self.el_config, text="Enable Elevenlabs Integration")
+        self.chkbx_elevenlabs_enabled.grid(row=0, column=0, columnspan=2, padx=15, pady=15, sticky="w")
+        if is_enabled:
+            self.chkbx_elevenlabs_enabled.select()
+
+        ctk.CTkLabel(self.el_config, text="API Key:").grid(row=1, column=0, padx=15, pady=5, sticky="w")
+        self.ent_el_apikey = ctk.CTkEntry(self.el_config, width=300, show="*")
+        self.ent_el_apikey.insert(0, api_key_val)
+        self.ent_el_apikey.grid(row=1, column=1, padx=15, pady=5, sticky="w")
+
+        ctk.CTkLabel(self.el_config, text="Max Characters limit per action:").grid(row=2, column=0, padx=15, pady=5, sticky="w")
+        self.ent_el_limit = ctk.CTkEntry(self.el_config, width=100)
+        self.ent_el_limit.insert(0, max_chars_val)
+        self.ent_el_limit.grid(row=2, column=1, padx=15, pady=5, sticky="w")
+
+        self.btn_el_save = ctk.CTkButton(self.el_config, text="Save Config", command=self.save_elevenlabs_config, fg_color="#10B981", hover_color="#059669")
+        self.btn_el_save.grid(row=3, column=0, columnspan=2, padx=15, pady=15, sticky="w")
+
+        # Voice fetching section
+        self.el_voices_frame = ctk.CTkFrame(self.elevenlabs_frame, fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), corner_radius=10)
+        self.el_voices_frame.grid(row=2, column=0, padx=20, pady=10, sticky="nsew")
+        
+        self.btn_el_fetch_voices = ctk.CTkButton(self.el_voices_frame, text="Fetch Voice List", command=self.fetch_elevenlabs_voices, fg_color="#3B82F6", hover_color="#2563EB")
+        self.btn_el_fetch_voices.grid(row=0, column=0, padx=15, pady=15, sticky="w")
+        
+        self.el_voices_textbox = ctk.CTkTextbox(self.el_voices_frame, width=600, height=300, fg_color=("gray90", "gray10"), corner_radius=5)
+        self.el_voices_textbox.grid(row=1, column=0, padx=15, pady=(0,15), sticky="nsew")
+
+    def save_elevenlabs_config(self):
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                cfg = yaml.safe_load(f)
+            if 'elevenlabs' not in cfg:
+                cfg['elevenlabs'] = {}
+                
+            cfg['elevenlabs']['enabled'] = bool(self.chkbx_elevenlabs_enabled.get())
+            cfg['elevenlabs']['api_key'] = self.ent_el_apikey.get()
+            try:
+                cfg['elevenlabs']['max_chars'] = int(self.ent_el_limit.get())
+            except:
+                cfg['elevenlabs']['max_chars'] = 200 # fallback
+                
+            with open(CONFIG_FILE, "w") as f:
+                yaml.dump(cfg, f)
+                
+            messagebox.showinfo("Success", "Elevenlabs Config saved!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save: {e}")
+
+    def fetch_elevenlabs_voices(self):
+        api_key = self.ent_el_apikey.get()
+        if not api_key:
+             messagebox.showerror("Error", "Please provide an API Key first!")
+             return
+             
+        self.el_voices_textbox.delete("0.0", "end")
+        self.el_voices_textbox.insert("end", "Fetching voices...\n")
+        
+        def do_fetch():
+            import asyncio
+            from platforms.elevenlabs_tts import ElevenLabsTTS
+            tts = ElevenLabsTTS(api_key=api_key)
+            voices = asyncio.run(tts.fetch_voices())
+            
+            def update_ui():
+                self.el_voices_textbox.delete("0.0", "end")
+                if not voices:
+                    self.el_voices_textbox.insert("end", "No voices found or invalid API key.\n")
+                    return
+                for v in voices:
+                    self.el_voices_textbox.insert("end", f"Name: {v['name']}  |  Category: {v['category']}\nVoice ID: {v['voice_id']}\n-----------------------------------\n")
+            
+            self.after(0, update_ui)
+            
+        threading.Thread(target=do_fetch, daemon=True).start()
 
 if __name__ == "__main__":
     app = App()
