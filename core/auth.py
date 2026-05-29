@@ -52,7 +52,7 @@ async def perform_twitch_oauth_flow(client_id, client_secret, redirect_uri="http
     await site.start()
 
     # Browser öffnen
-    scope = "chat:read+chat:edit+channel:read:redemptions+channel:manage:redemptions+clips:edit" 
+    scope = "chat:read+chat:edit+channel:read:redemptions+channel:manage:redemptions+clips:edit+moderator:manage:announcements+moderator:manage:shoutouts+moderator:manage:banned_users+channel:manage:vips+channel:edit:commercial" 
     auth_url = (f"https://id.twitch.tv/oauth2/authorize?response_type=code&client_id={client_id}"
                 f"&redirect_uri={redirect_uri}&scope={scope}")
     

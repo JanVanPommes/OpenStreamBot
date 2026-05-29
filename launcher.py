@@ -32,7 +32,7 @@ ctk.set_default_color_theme("blue")
 CONFIG_FILE = "config.yaml"
 # Nutze nun den internen Webserver statt Datei-Pfad
 DASHBOARD_URL = "http://localhost:8000/interface/dashboard.html"
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 class ConsoleRedirector:
     def __init__(self, text_widget, queue):
@@ -58,6 +58,7 @@ class App(ctk.CTk):
         self.profile_manager = ProfileManager()
         
         self.kill_existing_bot()
+        self._create_linux_desktop_entry()
         
         # Grid Layout
         self.grid_columnconfigure(1, weight=1)
@@ -157,6 +158,64 @@ class App(ctk.CTk):
 
         # Log Updater
         self.after(100, self.update_logs)
+
+    def _create_linux_desktop_entry(self):
+        """Automatically create a .desktop file on Linux if it doesn't exist."""
+        if os.name != 'posix' or sys.platform == 'darwin':
+            return # Only for Linux
+            
+        desktop_dir = os.path.expanduser("~/.local/share/applications")
+        desktop_file = os.path.join(desktop_dir, "openstreambot.desktop")
+        
+        if not os.path.exists(desktop_file):
+            try:
+                os.makedirs(desktop_dir, exist_ok=True)
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                icon_path = os.path.join(base_dir, "assets", "logo.png")
+                
+                # Wenn wir im kompilierten Modus sind, verwenden wir das executable, sonst python
+                if getattr(sys, 'frozen', False):
+                    python_cmd = os.path.abspath(sys.executable)
+                else:
+                    venv_python = os.path.join(base_dir, "venv", "bin", "python")
+                    if os.path.exists(venv_python):
+                        python_cmd = venv_python
+                    else:
+                        python_cmd = sys.executable
+
+                # Create wrapper script for dumb launchers
+                wrapper_script = os.path.join(base_dir, "start_bot.sh")
+                if not os.path.exists(wrapper_script):
+                    with open(wrapper_script, "w") as f:
+                        f.write(f"#!/bin/bash\ncd \"{base_dir}\"\nexec \"{python_cmd}\" \"{os.path.join(base_dir, 'launcher.py')}\"\n")
+                    os.chmod(wrapper_script, 0o755)
+
+                content = f"""[Desktop Entry]
+Version=1.0
+Type=Application
+Name=OpenStreamBot
+Comment=Automatisierungs-Bot für Twitch und YouTube
+Exec={wrapper_script}
+Path={base_dir}
+Icon={icon_path}
+Terminal=false
+Categories=Utility;
+StartupNotify=true
+"""
+                with open(desktop_file, "w") as f:
+                    f.write(content)
+                
+                # Make the desktop file executable (required by many Linux app launchers)
+                os.chmod(desktop_file, 0o755)
+                
+                # Try to update desktop database
+                try:
+                    subprocess.run(["update-desktop-database", desktop_dir], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except FileNotFoundError:
+                    pass
+                print("[System] Registered OpenStreamBot Linux App Shortcut.")
+            except Exception as e:
+                print(f"[System] Failed to register Linux App Shortcut: {e}")
 
     def setup_dashboard_frame(self):
         # Header

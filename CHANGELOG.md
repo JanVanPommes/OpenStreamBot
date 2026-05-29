@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0] - 2026-05-06
+### Added
+- **Stream Deck & OpenDeck Plugin**: Native support for Elgato Stream Deck and OpenDeck via a local `.sdPlugin`. Easily trigger OpenStreamBot actions by name using physical buttons.
+- **YouTube Events**: Added triggers for YouTube specific events, including **New Memberships**, **Member Milestones** (with month filtering), and **Super Chats** (with amount filtering).
+- **Twitch Watch Streaks**: Added a trigger for Twitch Watch Streaks, allowing you to react to specific viewer streak milestones.
+- **Animated & Gigantified Emotes**: The OBS Chat Dock now fully supports Twitch animated emotes. "Emote Only" messages scale up correctly, and emotes gigantified via Bits display at maximum size.
+- **Action Group Persistence**: The Action Editor now remembers which action groups you have collapsed or expanded across restarts.
+- **Linux App Launcher**: The bot now automatically creates a `.desktop` shortcut on Linux systems for easy launching from application menus or OpenDeck.
+
+### Fixed
+- **Twitch Moderation Commands**: Fully migrated the "Twitch Befehl ausführen" sub-action (Announce, Ban, Timeout, VIP, etc.) from deprecated IRC chat commands to the modern Twitch Helix API. This restores full functionality.
+- **Action Editor UI Bug**: Fixed a bug where the sub-action configuration form for "Twitch Befehl ausführen" and "YouTube Nachricht" would unexpectedly disappear or render completely empty.
 ## [0.4.0] - 2026-05-06
 ### Added
 - **ElevenLabs TTS**: New sub-action to generate and play text-to-speech using the ElevenLabs API.

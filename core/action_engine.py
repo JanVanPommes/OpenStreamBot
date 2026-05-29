@@ -230,6 +230,16 @@ class ActionEngine:
                 state = payload.get("state") # boolean
                 
                 self._update_action_state(a_name, state)
+            elif event == "trigger_action_by_name":
+                payload = data.get("data", {})
+                a_name = payload.get("action")
+                if a_name:
+                    print(f"[ActionEngine] External trigger requested for action: {a_name}")
+                    for action in self.actions:
+                        if action.get('name') == a_name and action.get('enabled', True):
+                            # Execute without context, since it's a manual trigger
+                            asyncio.create_task(self.execute_action(action, {}))
+                            break
                 
         except Exception as e:
             print(f"[ActionEngine] WS Message Error: {e}")
@@ -258,6 +268,10 @@ class ActionEngine:
              elif data.get("type") == "sub": mapped_type = "twitch_sub"
              elif data.get("type") == "twitch_first_message": mapped_type = "twitch_first_message"
              elif data.get("type") == "youtube_first_message": mapped_type = "youtube_first_message"
+             elif data.get("type") == "twitch_watch_streak": mapped_type = "twitch_watch_streak"
+             elif data.get("type") == "youtube_new_member": mapped_type = "youtube_new_member"
+             elif data.get("type") == "youtube_member_milestone": mapped_type = "youtube_member_milestone"
+             elif data.get("type") == "youtube_super_chat": mapped_type = "youtube_super_chat"
         elif event_type == "TwitchRedemption":
             mapped_type = "twitch_redemption"
         
@@ -385,6 +399,53 @@ class ActionEngine:
                  "message": data.get('message', '')
              }
 
+        # 5. Twitch Watch Streak (exact match, 0 = all)
+        elif mapped_type == "twitch_watch_streak":
+             target_streak = trigger_config.get('streak_value', 0)
+             streak_count = data.get('streak_count', 0)
+             if target_streak and target_streak != streak_count:
+                 return False, {}
+             return True, {
+                 "user": data.get('user', ''),
+                 "message": data.get('message', ''),
+                 "streak_count": str(streak_count)
+             }
+
+        # 6. YouTube New Member
+        elif mapped_type == "youtube_new_member":
+             return True, {
+                 "user": data.get('user', ''),
+                 "message": data.get('message', '')
+             }
+
+        # 7. YouTube Member Milestone (min_months filter, 0 = all)
+        elif mapped_type == "youtube_member_milestone":
+             min_months = trigger_config.get('min_months', 0)
+             months = data.get('months', 0)
+             if min_months and months < min_months:
+                 return False, {}
+             return True, {
+                 "user": data.get('user', ''),
+                 "message": data.get('message', ''),
+                 "months": str(months),
+                 "user_message": data.get('user_message', '')
+             }
+
+        # 8. YouTube Super Chat (min_amount filter in micros, 0 = all)
+        elif mapped_type == "youtube_super_chat":
+             min_amount = trigger_config.get('min_amount', 0)
+             amount_micros = data.get('amount_micros', 0)
+             # min_amount is in whole units (e.g. 5 = 5 EUR), micros = 5000000
+             if min_amount and amount_micros < (min_amount * 1000000):
+                 return False, {}
+             return True, {
+                 "user": data.get('user', ''),
+                 "message": data.get('message', ''),
+                 "amount": data.get('amount_display', '?'),
+                 "currency": data.get('currency', 'EUR'),
+                 "user_message": data.get('user_message', '')
+             }
+
         return True, {}
 
     async def action_queue_worker(self):
@@ -472,25 +533,25 @@ class ActionEngine:
                 
                 try:
                     if cmd == "Announce":
-                        await channel.send(f"/announce {message}")
+                        await self.twitch.execute_announcement(message)
                     elif cmd == "Shoutout":
-                        await channel.send(f"/shoutout {target}")
+                        await self.twitch.execute_shoutout(target)
                     elif cmd == "Ban":
-                        await channel.send(f"/ban {target} {message}")
+                        await self.twitch.execute_ban(target, message)
                     elif cmd == "Timeout":
                         duration = 600
                         try: duration = int(message)
                         except: pass
-                        await channel.send(f"/timeout {target} {duration}")
+                        await self.twitch.execute_timeout(target, duration, message)
                     elif cmd == "VIP":
-                        await channel.send(f"/vip {target}")
+                        await self.twitch.execute_vip(target)
                     elif cmd == "Un-VIP":
-                        await channel.send(f"/unvip {target}")
+                        await self.twitch.execute_unvip(target)
                     elif cmd == "Commercial":
                         duration = 30
                         try: duration = int(message)
                         except: pass
-                        await channel.send(f"/commercial {duration}")
+                        await self.twitch.execute_commercial(duration)
                     else:
                         print(f"[ActionEngine] Unknown Twitch Command: {cmd}")
                 except Exception as e:

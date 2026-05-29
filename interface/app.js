@@ -91,7 +91,11 @@ function addChatMessage(msgData) {
     // Parse emotes if available
     let processedMessage = msgData.message;
     if (msgData.emotes && msgData.emotes.length > 0) {
-        processedMessage = parseEmotes(msgData.message, msgData.emotes);
+        const isEmoteOnly = msgData.emote_only === true;
+        if (isEmoteOnly) {
+            div.classList.add('emote-only');
+        }
+        processedMessage = parseEmotes(msgData.message, msgData.emotes, isEmoteOnly);
     } else {
         // Sanitize text if no emotes (prevent XSS)
         processedMessage = escapeHtml(msgData.message);
@@ -222,9 +226,14 @@ function getBadgesHtml(badges) {
     return html;
 }
 
-function parseEmotes(text, emotes) {
+function parseEmotes(text, emotes, isEmoteOnly = false) {
     // 1. Sort emotes by start index to handle them in order
     emotes.sort((a, b) => a.start - b.start);
+
+    // Use animated format (works for both animated and static emotes)
+    // Scale: 2.0 for inline, 2.0 for emote-only (same resolution, CSS controls display size)
+    const scale = '2.0';
+    const emoteClass = isEmoteOnly ? 'chat-emote emote-only-size' : 'chat-emote';
 
     let result = "";
     let currentIndex = 0;
@@ -235,11 +244,12 @@ function parseEmotes(text, emotes) {
             result += escapeHtml(text.substring(currentIndex, emote.start));
         }
 
-        // Add the emote image
-        const url = `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/1.0`;
+        // Add the emote image (animated format with fallback to default)
+        const url = `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/animated/dark/${scale}`;
+        const fallbackUrl = `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/${scale}`;
         // Twitch text range is inclusive
         const code = text.substring(emote.start, emote.end + 1);
-        result += `<img src="${url}" alt="${code}" title="${code}" class="chat-emote" style="vertical-align: middle; height: 1.2em;">`;
+        result += `<img src="${url}" alt="${code}" title="${code}" class="${emoteClass}" onerror="this.src='${fallbackUrl}';this.onerror=null;">`;
 
         currentIndex = emote.end + 1;
     }

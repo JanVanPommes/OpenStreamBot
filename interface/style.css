@@ -245,3 +245,27 @@ input[type=range] {
         transform: translateY(0);
     }
 }
+
+/* Emotes */
+.chat-emote {
+    vertical-align: middle;
+    height: 2em;
+    display: inline-block;
+    margin: -1px 1px;
+}
+
+/* Emote-only messages: emotes shown larger */
+.chat-emote.emote-only-size {
+    height: 2em;
+    margin: 2px 1px;
+}
+
+/* Gigantified (Bit-powered) emotes */
+.chat-emote.emote-giant {
+    height: 4em;
+    margin: 4px 2px;
+}
+
+.message.emote-only {
+    padding: 2px 8px;
+}

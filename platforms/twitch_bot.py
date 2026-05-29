@@ -393,6 +393,89 @@ class TwitchBot(commands.Bot):
             print(f"[Twitch] Clip Exception: {e}")
             return None
 
+    async def _get_user_id(self, username: str) -> str:
+        try:
+            users = await self.fetch_users(names=[username])
+            if users:
+                return str(users[0].id)
+        except Exception as e:
+            print(f"[Twitch] Failed to fetch user ID for {username}: {e}")
+        return None
+
+    async def _api_post(self, url, json_data=None):
+        headers = {
+            "Client-Id": self._http.client_id,
+            "Authorization": f"Bearer {self._http.token.replace('oauth:', '')}",
+            "Content-Type": "application/json"
+        }
+        try:
+            async with self._http.session.post(url, headers=headers, json=json_data) as resp:
+                if resp.status not in (200, 202, 204):
+                    print(f"[Twitch] API Error {resp.status} on {url}: {await resp.text()}")
+                return resp.status
+        except Exception as e:
+            print(f"[Twitch] API Exception: {e}")
+            return None
+
+    async def _api_delete(self, url, params=None):
+        headers = {
+            "Client-Id": self._http.client_id,
+            "Authorization": f"Bearer {self._http.token.replace('oauth:', '')}"
+        }
+        try:
+            async with self._http.session.delete(url, headers=headers, params=params) as resp:
+                if resp.status not in (200, 202, 204):
+                    print(f"[Twitch] API Error {resp.status} on {url}: {await resp.text()}")
+                return resp.status
+        except Exception as e:
+            print(f"[Twitch] API Exception: {e}")
+            return None
+
+    async def execute_announcement(self, message: str, color: str = "primary"):
+        if not self.channel_id: return
+        url = f"https://api.twitch.tv/helix/chat/announcements?broadcaster_id={self.channel_id}&moderator_id={self.channel_id}"
+        await self._api_post(url, {"message": message, "color": color})
+
+    async def execute_shoutout(self, target_username: str):
+        if not self.channel_id: return
+        target_id = await self._get_user_id(target_username)
+        if not target_id: return
+        url = f"https://api.twitch.tv/helix/chat/shoutouts?from_broadcaster_id={self.channel_id}&to_broadcaster_id={target_id}&moderator_id={self.channel_id}"
+        await self._api_post(url)
+
+    async def execute_ban(self, target_username: str, reason: str = ""):
+        if not self.channel_id: return
+        target_id = await self._get_user_id(target_username)
+        if not target_id: return
+        url = f"https://api.twitch.tv/helix/moderation/bans?broadcaster_id={self.channel_id}&moderator_id={self.channel_id}"
+        await self._api_post(url, {"data": {"user_id": target_id, "reason": reason}})
+
+    async def execute_timeout(self, target_username: str, duration: int, reason: str = ""):
+        if not self.channel_id: return
+        target_id = await self._get_user_id(target_username)
+        if not target_id: return
+        url = f"https://api.twitch.tv/helix/moderation/bans?broadcaster_id={self.channel_id}&moderator_id={self.channel_id}"
+        await self._api_post(url, {"data": {"user_id": target_id, "duration": duration, "reason": reason}})
+
+    async def execute_vip(self, target_username: str):
+        if not self.channel_id: return
+        target_id = await self._get_user_id(target_username)
+        if not target_id: return
+        url = f"https://api.twitch.tv/helix/channels/vips?broadcaster_id={self.channel_id}&user_id={target_id}"
+        await self._api_post(url)
+
+    async def execute_unvip(self, target_username: str):
+        if not self.channel_id: return
+        target_id = await self._get_user_id(target_username)
+        if not target_id: return
+        url = f"https://api.twitch.tv/helix/channels/vips"
+        await self._api_delete(url, params={"broadcaster_id": self.channel_id, "user_id": target_id})
+
+    async def execute_commercial(self, length: int):
+        if not self.channel_id: return
+        url = "https://api.twitch.tv/helix/channels/commercial"
+        await self._api_post(url, {"broadcaster_id": self.channel_id, "length": length})
+
 
     async def get_user_last_game(self, username):
         """
@@ -492,6 +575,16 @@ class TwitchBot(commands.Bot):
         # though keep existing boolean as primary source if available.
         # TwitchIO 'is_mod' is reliable.
 
+        # Check if message is emote-only (all non-whitespace is covered by emotes)
+        emote_only = False
+        if emotes:
+            text_without_emotes = message.content
+            # Sort emotes by start descending to safely remove from string
+            sorted_emotes = sorted(emotes, key=lambda e: e['start'], reverse=True)
+            for e in sorted_emotes:
+                text_without_emotes = text_without_emotes[:e['start']] + text_without_emotes[e['end']+1:]
+            emote_only = len(text_without_emotes.strip()) == 0
+
         chat_data = {
             "platform": "twitch",
             "user": author_name,
@@ -504,7 +597,8 @@ class TwitchBot(commands.Bot):
             "timestamp": str(datetime.datetime.now()),
             "emotes": emotes,
             "badges": msg_badges,
-            "is_first_message": author_name.lower() not in self.seen_users
+            "is_first_message": author_name.lower() not in self.seen_users,
+            "emote_only": emote_only
         }
 
         # 3. An alle WebSocket-Clients senden (Overlays empfangen das jetzt!)
@@ -618,6 +712,20 @@ class TwitchBot(commands.Bot):
             data = {"type": "raid", "message": event_text}
             await self.event_server.broadcast("SystemEvent", data)
 
+        elif msg_id == 'viewermilestone':
+            category = tags.get('msg-param-category', '')
+            if category == 'watch-streak':
+                user = tags.get('display-name', 'Jemand')
+                streak = tags.get('msg-param-value', '0')
+                event_text = f"🔥 {user} hat eine {streak}-Streams-Serie!"
+                data = {
+                    "type": "twitch_watch_streak",
+                    "message": event_text,
+                    "user": user,
+                    "streak_count": int(streak)
+                }
+                await self.event_server.broadcast("SystemEvent", data)
+
     # --- TEST COMMANDS ---
     @commands.command()
     async def testsub(self, ctx: commands.Context):
@@ -646,4 +754,19 @@ class TwitchBot(commands.Bot):
 
         print(f"[Command] !testraid triggered by {ctx.author.name}")
         data = {"type": "raid", "message": f"RUN! {ctx.author.name} raidet mit 9000 Zuschauern! (Test)"}
+        await self.event_server.broadcast("SystemEvent", data)
+
+    @commands.command()
+    async def teststreak(self, ctx: commands.Context):
+        """Simuliert eine Watch Streak"""
+        if not ctx.author.is_mod and ctx.author.name.lower() != self.channel_name.lower():
+            return
+
+        print(f"[Command] !teststreak triggered by {ctx.author.name}")
+        data = {
+            "type": "twitch_watch_streak",
+            "message": f"🔥 {ctx.author.name} hat eine 5-Streams-Serie! (Test)",
+            "user": ctx.author.name,
+            "streak_count": 5
+        }
         await self.event_server.broadcast("SystemEvent", data)

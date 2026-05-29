@@ -5,6 +5,61 @@ import os
 import pygame._sdl2.audio as sdl_audio
 import pygame
 
+# --- Display Name Mappings (Deutsch) ---
+TRIGGER_DISPLAY_NAMES = {
+    "twitch_command": "💬 Twitch: Chat-Befehl",
+    "youtube_command": "📺 YouTube: Chat-Befehl",
+    "twitch_raid": "⚔️ Twitch: Raid empfangen",
+    "twitch_sub": "⭐ Twitch: Neuer Subscriber",
+    "twitch_redemption": "💎 Twitch: Kanalpunkt-Einlösung",
+    "twitch_first_message": "👋 Twitch: Erste Nachricht",
+    "youtube_first_message": "👋 YouTube: Erste Nachricht",
+    "twitch_watch_streak": "🔥 Twitch: Zuschauerserie",
+    "youtube_new_member": "🎉 YouTube: Neues Mitglied",
+    "youtube_member_milestone": "🏅 YouTube: Mitglieder-Jubiläum",
+    "youtube_super_chat": "💰 YouTube: Super Chat",
+    "timer": "⏱️ Timer (Intervall)",
+    "obs_scene": "🎬 OBS: Szene gewechselt",
+}
+
+SUB_ACTION_DISPLAY_NAMES = {
+    "twitch_chat": "💬 Chat-Nachricht (Twitch)",
+    "youtube_chat": "📺 YouTube Nachricht",
+    "twitch_command": "⚡ Twitch Befehl ausführen",
+    "delay": "⏳ Verzögerung",
+    "log": "📝 Log-Nachricht",
+    "play_sound": "🔊 Sound abspielen",
+    "stop_sounds": "🔇 Alle Sounds stoppen",
+    "playlist": "🎵 Playlist starten",
+    "stop_playlist": "⏹️ Playlist stoppen",
+    "obs_set_scene": "🎬 OBS Szene wechseln",
+    "youtube_random_short": "📱 YouTube Short abspielen",
+    "trigger_action": "🔗 Action auslösen",
+    "set_volume": "🔈 Lautstärke ändern",
+    "set_action_state": "🔀 Action-Status ändern",
+    "twitch_create_clip": "🎬 Twitch Clip erstellen",
+    "execute_csharp": "💻 C# Code ausführen",
+    "random_action_group": "🎲 Zufalls-Gruppe",
+    "elevenlabs_tts": "🗣️ Text-to-Speech (ElevenLabs)",
+}
+
+# Context variables available per trigger type
+TRIGGER_CONTEXT_VARS = {
+    "twitch_command": ["%user%", "%message%"],
+    "youtube_command": ["%user%", "%message%"],
+    "twitch_raid": ["%user%", "%message%"],
+    "twitch_sub": ["%user%", "%message%"],
+    "twitch_redemption": ["%user%", "%input%", "%message%"],
+    "twitch_first_message": ["%user%", "%message%"],
+    "youtube_first_message": ["%user%", "%message%"],
+    "twitch_watch_streak": ["%user%", "%message%", "%streak_count%"],
+    "youtube_new_member": ["%user%", "%message%"],
+    "youtube_member_milestone": ["%user%", "%message%", "%months%", "%user_message%"],
+    "youtube_super_chat": ["%user%", "%message%", "%amount%", "%currency%", "%user_message%"],
+    "timer": [],
+    "obs_scene": [],
+}
+
 def get_ws_url():
     port = 8080 # Default fallback
     if os.path.exists("config.yaml"):
@@ -21,6 +76,19 @@ class ActionEditorFrame(ctk.CTkFrame):
         self.config_file = config_file
         self.actions = []
         self.current_action = None
+        self.collapsed_groups = self._load_collapsed_groups()
+        
+        # Color palette for groups (rotating)
+        self._group_colors = [
+            "#3B82F6",  # Blue
+            "#10B981",  # Green
+            "#F59E0B",  # Amber
+            "#EF4444",  # Red
+            "#8B5CF6",  # Violet
+            "#EC4899",  # Pink
+            "#06B6D4",  # Cyan
+            "#F97316",  # Orange
+        ]
         
         self.load_actions()
         
@@ -62,8 +130,8 @@ class ActionEditorFrame(ctk.CTkFrame):
         self.entry_name.pack(side="left", fill="x", expand=True, padx=(0, 5))
         
         self.var_action_group = ctk.StringVar()
-        self.entry_group = ctk.CTkEntry(self.header_frame, textvariable=self.var_action_group, width=100, placeholder_text="Group")
-        self.entry_group.pack(side="right", padx=5)
+        self.combo_group = ctk.CTkComboBox(self.header_frame, variable=self.var_action_group, width=120, values=["General"])
+        self.combo_group.pack(side="right", padx=5)
         
         # Bind traces for live list update
         self.var_action_name.trace_add("write", lambda *args: self.on_header_change())
@@ -98,10 +166,19 @@ class ActionEditorFrame(ctk.CTkFrame):
         self.scroll_triggers = ctk.CTkScrollableFrame(self.frame_triggers_container, fg_color="transparent")
         self.scroll_triggers.pack(side="top", fill="both", expand=True, padx=5, pady=5)
 
+        # Context Variables Info (between Triggers and Sub-Actions)
+        self.frame_vars = ctk.CTkFrame(self.editor_panel, fg_color=("#2A3A2A", "#1E2D1E"), border_width=1, border_color=("#4CAF50", "#2E7D32"), corner_radius=8)
+        self.frame_vars.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 2))
+        
+        self.lbl_vars_header = ctk.CTkLabel(self.frame_vars, text="📋 Verfügbare Variablen", font=ctk.CTkFont(size=11, weight="bold"), text_color="#66BB6A")
+        self.lbl_vars_header.pack(anchor="w", padx=10, pady=(4, 0))
+        self.lbl_vars_content = ctk.CTkLabel(self.frame_vars, text="", font=ctk.CTkFont(size=11), text_color="#A5D6A7", wraplength=500, justify="left")
+        self.lbl_vars_content.pack(anchor="w", padx=10, pady=(0, 4))
+
         # Sub-Actions Section
         self.frame_subs_container = ctk.CTkFrame(self.editor_panel, fg_color=("gray85", "#262626"), border_width=1, border_color=("gray75", "#333333"), corner_radius=10)
-        self.frame_subs_container.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=10, pady=5)
-        self.editor_panel.grid_rowconfigure(2, weight=2) # Subactions get slightly more weight
+        self.frame_subs_container.grid(row=3, column=0, columnspan=2, sticky="nsew", padx=10, pady=5)
+        self.editor_panel.grid_rowconfigure(3, weight=2) # Subactions get slightly more weight
         
         ctk.CTkLabel(self.frame_subs_container, text="Sub-Actions", font=ctk.CTkFont(weight="bold")).pack(side="top", anchor="w", padx=15, pady=(10, 0))
 
@@ -243,31 +320,160 @@ class ActionEditorFrame(ctk.CTkFrame):
             grouped[g].append(action)
             
         # Display Groups
-        for group_name in sorted(grouped.keys()):
-            # Header
-            header = ctk.CTkLabel(self.action_listbox, text=f"-- {group_name} --", text_color="gray70", font=ctk.CTkFont(size=12, weight="bold"))
-            header.pack(fill="x", pady=(10, 2))
+        sorted_groups = sorted(grouped.keys())
+        for gi, group_name in enumerate(sorted_groups):
+            # Assign color from palette
+            group_color = self._group_colors[gi % len(self._group_colors)]
+            is_collapsed = group_name in self.collapsed_groups
+            arrow = "▶" if is_collapsed else "▼"
+            action_count = len(grouped[group_name])
             
-            # Items
-            for action in grouped[group_name]:
-                # Find original index
-                idx = self.actions.index(action)
-                
-                name_txt = action.get('name', 'Untitled')
-                if not action.get('enabled', True):
-                    name_txt += " (Off)"
+            # Group Header Frame
+            header_frame = ctk.CTkFrame(self.action_listbox, fg_color="transparent", height=28)
+            header_frame.pack(fill="x", pady=(4, 1))
+            header_frame.pack_propagate(False)
+            
+            # Color bar (compact)
+            color_bar = ctk.CTkFrame(header_frame, width=3, fg_color=group_color, corner_radius=1)
+            color_bar.pack(side="left", fill="y", padx=(0, 4))
+            
+            # Collapse button + Group name
+            header_btn = ctk.CTkButton(
+                header_frame, 
+                text=f"{arrow} {group_name} ({action_count})",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                fg_color="transparent", 
+                text_color=group_color,
+                hover_color=("gray85", "#2A2A2A"),
+                height=24,
+                anchor="w",
+                command=lambda g=group_name: self.toggle_group(g)
+            )
+            header_btn.pack(side="left", fill="x", expand=True)
+            
+            # Rename button
+            rename_btn = ctk.CTkButton(
+                header_frame, text="✎", width=22, height=22,
+                font=ctk.CTkFont(size=10),
+                fg_color="transparent", text_color="gray60",
+                hover_color=("gray80", "#333333"),
+                command=lambda g=group_name: self.rename_group(g)
+            )
+            rename_btn.pack(side="right", padx=(0, 2))
+            
+            # Items (only if not collapsed)
+            if not is_collapsed:
+                for action in grouped[group_name]:
+                    # Find original index
+                    idx = self.actions.index(action)
                     
-                btn = ctk.CTkButton(self.action_listbox, text=name_txt, 
-                                    command=lambda i=idx: self.select_action(i),
-                                    fg_color="transparent", border_width=1, text_color=("gray10", "gray90"))
-                btn.pack(fill="x", pady=2)
+                    name_txt = action.get('name', 'Untitled')
+                    if not action.get('enabled', True):
+                        name_txt += " (Off)"
+                    
+                    # Highlight selected action
+                    is_selected = (action is self.current_action)
+                    btn_fg = group_color if is_selected else "transparent"
+                    btn_border = group_color if is_selected else ("gray75", "#444444")
+                        
+                    btn = ctk.CTkButton(
+                        self.action_listbox, text=name_txt, 
+                        command=lambda i=idx: self.select_action(i),
+                        fg_color=btn_fg, 
+                        border_width=1, 
+                        border_color=btn_border,
+                        text_color=("gray10", "gray90"),
+                        hover_color=("gray80", "#333333")
+                    )
+                    btn.pack(fill="x", pady=2, padx=(10, 0))
                 
-            # Bind events to header and its children inside the loop for this group
-            self._bind_scroll_events(header)
+            # Bind scroll events
+            self._bind_scroll_events(header_frame)
             
-        # Bind events to all newly created buttons in the listbox
+        # Bind events to all newly created widgets in the listbox
         for child in self.action_listbox.winfo_children():
             self._bind_scroll_events(child)
+
+    def toggle_group(self, group_name):
+        """Collapse or expand a group in the action list."""
+        if group_name in self.collapsed_groups:
+            self.collapsed_groups.discard(group_name)
+        else:
+            self.collapsed_groups.add(group_name)
+        self._save_collapsed_groups()
+        self.refresh_action_list()
+
+    def _load_collapsed_groups(self):
+        """Load collapsed group state from disk."""
+        import json
+        try:
+            if os.path.exists('.group_state.json'):
+                with open('.group_state.json', 'r') as f:
+                    return set(json.load(f))
+        except: pass
+        return set()
+
+    def _save_collapsed_groups(self):
+        """Save collapsed group state to disk."""
+        import json
+        try:
+            with open('.group_state.json', 'w') as f:
+                json.dump(list(self.collapsed_groups), f)
+        except: pass
+
+    def rename_group(self, old_name):
+        """Rename a group via dialog. Updates all actions in that group."""
+        new_name = simpledialog.askstring("Gruppe umbenennen", f"Neuer Name für '{old_name}':", initialvalue=old_name)
+        if not new_name or new_name == old_name:
+            return
+        # Update all actions in this group
+        for action in self.actions:
+            if (action.get('group', 'General') or 'General') == old_name:
+                action['group'] = new_name
+        # Update collapsed state
+        if old_name in self.collapsed_groups:
+            self.collapsed_groups.discard(old_name)
+            self.collapsed_groups.add(new_name)
+        # Update combo if current action was in this group
+        if self.var_action_group.get() == old_name:
+            self.var_action_group.set(new_name)
+        self._update_group_combo()
+        self.refresh_action_list()
+        self.save_actions()
+
+    def get_group_names(self):
+        """Returns a sorted list of all unique group names currently in use."""
+        groups = set()
+        for action in self.actions:
+            g = action.get('group', 'General') or 'General'
+            groups.add(g)
+        if not groups:
+            groups.add('General')
+        return sorted(groups)
+
+    def _update_group_combo(self):
+        """Refreshes the group ComboBox values with all existing group names."""
+        groups = self.get_group_names()
+        self.combo_group.configure(values=groups)
+
+    def _update_context_vars(self, triggers):
+        """Update the context variables info panel based on the action's triggers."""
+        if not triggers:
+            self.lbl_vars_content.configure(text="Keine Trigger konfiguriert")
+            return
+        
+        # Collect all unique variables from all triggers
+        all_vars = set()
+        for t in triggers:
+            t_type = t.get('type', '')
+            vars_list = TRIGGER_CONTEXT_VARS.get(t_type, [])
+            all_vars.update(vars_list)
+        
+        if all_vars:
+            vars_text = "  ".join(sorted(all_vars))
+            self.lbl_vars_content.configure(text=vars_text)
+        else:
+            self.lbl_vars_content.configure(text="Keine Variablen verfügbar")
 
     # --- SCROLL FIX (from Rewards Editor) ---
     def _on_mouse_wheel(self, event):
@@ -301,6 +507,8 @@ class ActionEditorFrame(ctk.CTkFrame):
         self.var_action_group.set(self.current_action.get('group', 'General'))
         self.var_cooldown.set(str(self.current_action.get('cooldown', 0)))
         self.var_enabled.set(self.current_action.get('enabled', True))
+        self._update_group_combo()
+        self.refresh_action_list()
         self.refresh_details()
         self._is_loading_action = False
 
@@ -318,7 +526,9 @@ class ActionEditorFrame(ctk.CTkFrame):
             pass
 
     def add_action(self):
-        new_action = {'name': 'New Action', 'group': 'General', 'enabled': True, 'triggers': [], 'sub_actions': []}
+        # Let user pick a group from existing ones or type a new name
+        groups = self.get_group_names()
+        new_action = {'name': 'New Action', 'group': groups[0] if groups else 'General', 'enabled': True, 'triggers': [], 'sub_actions': []}
         self.actions.append(new_action)
         self.refresh_action_list()
         self.select_action(len(self.actions)-1)
@@ -339,14 +549,18 @@ class ActionEditorFrame(ctk.CTkFrame):
         for w in self.scroll_triggers.winfo_children(): w.destroy()
         for w in self.scroll_subs.winfo_children(): w.destroy()
         
-        if not self.current_action: return
+        if not self.current_action:
+            self._update_context_vars([])
+            return
+        
+        self._update_context_vars(self.current_action.get('triggers', []))
         
         # Triggers
         triggers = self.current_action.get('triggers', [])
         for i, t in enumerate(triggers):
             f = ctk.CTkFrame(self.scroll_triggers, fg_color=("gray90", "#3A3A3A"), border_width=1, border_color=("gray80", "#4D4D4D"), corner_radius=6)
             f.pack(fill="x", pady=4, padx=5)
-            text = f"{t['type']}"
+            text = TRIGGER_DISPLAY_NAMES.get(t['type'], t['type'])
             if 'command' in t: 
                 perm = t.get('permission', 'Everyone')
                 text += f": {t['command']} [{perm}]"
@@ -355,6 +569,7 @@ class ActionEditorFrame(ctk.CTkFrame):
             elif 'interval' in t: text += f" ({t['interval']}s)"
             elif 'reward_title' in t: text += f": {t['reward_title']}"
             elif t['type'] in ['twitch_first_message', 'youtube_first_message'] and t.get('user'): text += f" (User: {t['user']})"
+            elif t['type'] == 'twitch_watch_streak' and t.get('streak_value'): text += f" (={t['streak_value']})"
             
             lbl = ctk.CTkLabel(f, text=text)
             lbl.pack(side="left", padx=5)
@@ -387,7 +602,7 @@ class ActionEditorFrame(ctk.CTkFrame):
             f = ctk.CTkFrame(self.scroll_subs, fg_color=("gray90", "#3A3A3A"), border_width=1, border_color=("gray80", "#4D4D4D"), corner_radius=6)
             f.pack(fill="x", pady=4, padx=5)
             
-            summary = s['type']
+            summary = SUB_ACTION_DISPLAY_NAMES.get(s['type'], s['type'])
             if 'message' in s: summary += f": {s['message'][:20]}..."
             elif 'ms' in s: summary += f": {s['ms']}ms"
             elif 'folder' in s: summary += f": {s['folder']}"
@@ -500,14 +715,19 @@ class SubActionDialog(ctk.CTkToplevel):
         # Use initial type or default
         start_type = self.initial_data.get('type', "twitch_chat")
         
-        self.type_var = ctk.StringVar(value=start_type)
+        # Display name mappings for sub-action types
+        self.sa_display_to_internal = {v: k for k, v in SUB_ACTION_DISPLAY_NAMES.items()}
+        self.sa_internal_to_display = SUB_ACTION_DISPLAY_NAMES.copy()
         
+        start_display = self.sa_internal_to_display.get(start_type, start_type)
+        self.type_var = ctk.StringVar(value=start_display)
         
-        sub_types = sorted(list(set(["twitch_chat", "youtube_chat", "twitch_command", "delay", "log", "play_sound", "stop_sounds", "playlist", "stop_playlist", "obs_set_scene", "youtube_random_short", "trigger_action", "set_volume", "set_action_state", "twitch_create_clip", "execute_csharp", "random_action_group", "elevenlabs_tts"])))
+        display_names = sorted(self.sa_internal_to_display.values())
         
         self.combo = ctk.CTkComboBox(self, variable=self.type_var, 
-                                     values=sub_types,
-                                     command=self.on_type_change)
+                                     values=display_names,
+                                     command=lambda choice: self.on_type_change(
+                                         self.sa_display_to_internal.get(choice, choice)))
         self.combo.pack(pady=5)
         
         # --- DYNAMIC FRAME ---
@@ -568,7 +788,7 @@ class SubActionDialog(ctk.CTkToplevel):
             self.widgets['device'] = dev_var
 
         if choice == "twitch_chat":
-            ctk.CTkLabel(self.frame_config, text="Twitch Chat Message:").pack(anchor="w")
+            ctk.CTkLabel(self.frame_config, text="Chat Message:").pack(anchor="w")
             entry = ctk.CTkEntry(self.frame_config)
             entry.insert(0, get_val('message'))
             entry.pack(fill="x", pady=5)
@@ -599,298 +819,6 @@ class SubActionDialog(ctk.CTkToplevel):
             msg_entry.insert(0, get_val('message'))
             msg_entry.pack(fill="x", pady=5)
             self.widgets['message'] = msg_entry
-            
-        elif choice == "log":
-            ctk.CTkLabel(self.frame_config, text="Log Message:").pack(anchor="w")
-            entry = ctk.CTkEntry(self.frame_config)
-            entry.insert(0, get_val('message'))
-            entry.pack(fill="x", pady=5)
-            self.widgets['message'] = entry
-            
-        elif choice == "delay":
-            ctk.CTkLabel(self.frame_config, text="Term (ms):").pack(anchor="w")
-            entry = ctk.CTkEntry(self.frame_config)
-            entry.insert(0, get_val('ms', '1000'))
-            entry.pack(fill="x", pady=5)
-            self.widgets['ms'] = entry
-
-        elif choice == "play_sound":
-            ctk.CTkLabel(self.frame_config, text="Sound File:").pack(anchor="w")
-            f_frame = ctk.CTkFrame(self.frame_config, fg_color="transparent")
-            f_frame.pack(fill="x")
-            
-            entry = ctk.CTkEntry(f_frame)
-            entry.insert(0, get_val('file'))
-            entry.pack(side="left", fill="x", expand=True)
-            self.widgets['file'] = entry
-            
-            btn = ctk.CTkButton(f_frame, text="...", width=30, command=lambda: self.browse_file(entry))
-            btn.pack(side="right", padx=5)
-            
-            add_device_selector()
-            
-            ctk.CTkLabel(self.frame_config, text="Volume (0-100%):").pack(anchor="w", pady=(10,0))
-            
-            def update_vol_lbl(val):
-                lbl_vol.configure(text=f"{int(val)}%")
-                
-            init_vol = float(get_val('volume', '100'))
-            
-            slider = ctk.CTkSlider(self.frame_config, from_=0, to=100, number_of_steps=100, command=update_vol_lbl)
-            slider.set(init_vol)
-            slider.pack(fill="x", pady=5)
-            self.widgets['volume_slider'] = slider
-            
-            lbl_vol = ctk.CTkLabel(self.frame_config, text=f"{int(init_vol)}%")
-            lbl_vol.pack(anchor="n")
-
-        elif choice == "playlist":
-            ctk.CTkLabel(self.frame_config, text="Music Folder:").pack(anchor="w")
-            f_frame = ctk.CTkFrame(self.frame_config, fg_color="transparent")
-            f_frame.pack(fill="x")
-            
-            entry = ctk.CTkEntry(f_frame)
-            entry.insert(0, get_val('folder'))
-            entry.pack(side="left", fill="x", expand=True)
-            self.widgets['folder'] = entry
-            
-            btn = ctk.CTkButton(f_frame, text="...", width=30, command=lambda: self.browse_folder(entry))
-            btn.pack(side="right", padx=5)
-            
-            add_device_selector()
-            
-            # Volume Slider for Playlist
-            ctk.CTkLabel(self.frame_config, text="Volume (0-100%):").pack(anchor="w", pady=(10,0))
-            
-            def update_vol_lbl(val):
-                lbl_vol.configure(text=f"{int(val)}%")
-                
-            init_vol = float(get_val('volume', '100'))
-            
-            slider = ctk.CTkSlider(self.frame_config, from_=0, to=100, number_of_steps=100, command=update_vol_lbl)
-            slider.set(init_vol)
-            slider.pack(fill="x", pady=5)
-            self.widgets['volume_slider'] = slider
-            
-            lbl_vol = ctk.CTkLabel(self.frame_config, text=f"{int(init_vol)}%")
-            lbl_vol.pack(anchor="n")
-
-        elif choice == "obs_set_scene":
-            ctk.CTkLabel(self.frame_config, text="Scene Name:").pack(anchor="w")
-            entry = ctk.CTkEntry(self.frame_config)
-            entry.insert(0, get_val('scene'))
-            entry.pack(fill="x", pady=5)
-            self.widgets['scene'] = entry
-            
-        elif choice == "youtube_random_short":
-             ctk.CTkLabel(self.frame_config, text="No configuration needed.\nMake sure to 'Sync Shorts' in 'Accounts' tab!").pack(pady=10)
-
-        elif choice == "trigger_action":
-            ctk.CTkLabel(self.frame_config, text="Action Name to Trigger:").pack(anchor="w")
-            
-            # Get Action Names
-            action_names = sorted([a.get('name', 'Untitled') for a in self.master.actions])
-            
-            act_var = ctk.StringVar(value=get_val('action_name'))
-            combo = ctk.CTkComboBox(self.frame_config, variable=act_var, values=action_names)
-            combo.pack(fill="x", pady=5)
-            self.widgets['action_name'] = act_var
-
-        elif choice == "set_action_state":
-            ctk.CTkLabel(self.frame_config, text="Target Action Name:").pack(anchor="w")
-            
-            # Get Action Names
-            action_names = sorted([a.get('name', 'Untitled') for a in self.master.actions])
-            
-            act_var = ctk.StringVar(value=get_val('action_name'))
-            combo = ctk.CTkComboBox(self.frame_config, variable=act_var, values=action_names)
-            combo.pack(fill="x", pady=5)
-            self.widgets['action_name'] = act_var
-            
-            ctk.CTkLabel(self.frame_config, text="New State:").pack(anchor="w")
-            state_var = ctk.StringVar(value=get_val('state', 'toggle'))
-            ctk.CTkComboBox(self.frame_config, variable=state_var, values=['on', 'off', 'toggle']).pack(fill="x", pady=5)
-            self.widgets['state'] = state_var
-            
-            ctk.CTkLabel(self.frame_config, text="Duration (seconds, 0=permanent):").pack(anchor="w")
-            dur_entry = ctk.CTkEntry(self.frame_config)
-            dur_entry.insert(0, get_val('duration', '0'))
-            dur_entry.pack(fill="x", pady=5)
-            self.widgets['duration'] = dur_entry
-
-        elif choice == "set_volume":
-            # Target
-            ctk.CTkLabel(self.frame_config, text="Target:").pack(anchor="w")
-            t_var = ctk.StringVar(value=get_val('target', 'sfx'))
-            ctk.CTkComboBox(self.frame_config, variable=t_var, values=['sfx', 'playlist']).pack(fill="x", pady=5)
-            self.widgets['target'] = t_var
-            
-            # Mode
-            ctk.CTkLabel(self.frame_config, text="Mode:").pack(anchor="w")
-            m_var = ctk.StringVar(value=get_val('mode', 'set'))
-            ctk.CTkComboBox(self.frame_config, variable=m_var, values=['set', 'adjust']).pack(fill="x", pady=5)
-            self.widgets['mode'] = m_var
-            
-            # Value
-            ctk.CTkLabel(self.frame_config, text="Value (0-100%):").pack(anchor="w")
-            
-            # Slider Logic
-            def update_val_lbl(val):
-                lbl_val.configure(text=f"{int(val)}%")
-                
-            init_val = float(get_val('value', '0.5'))
-            # Check if stored as 0-1 or 0-100
-            if init_val <= 1.0: init_val *= 100
-            
-            slider = ctk.CTkSlider(self.frame_config, from_=0, to=100, number_of_steps=100, command=update_val_lbl)
-            slider.set(init_val)
-            slider.pack(fill="x", pady=5)
-            self.widgets['value_slider'] = slider # Special key
-            
-            lbl_val = ctk.CTkLabel(self.frame_config, text=f"{int(init_val)}%")
-            lbl_val.pack(anchor="n")
-
-        elif choice == "elevenlabs_tts":
-            ctk.CTkLabel(self.frame_config, text="Text (+ Variables):").pack(anchor="w")
-            entry = ctk.CTkEntry(self.frame_config)
-            entry.insert(0, get_val('text'))
-            entry.pack(fill="x", pady=5)
-            self.widgets['text'] = entry
-
-            ctk.CTkLabel(self.frame_config, text="Voice ID:").pack(anchor="w")
-            v_entry = ctk.CTkEntry(self.frame_config)
-            v_entry.insert(0, get_val('voice_id'))
-            v_entry.pack(fill="x", pady=5)
-            self.widgets['voice_id'] = v_entry
-            
-            add_device_selector()
-            
-            ctk.CTkLabel(self.frame_config, text="Volume (0-100%):").pack(anchor="w", pady=(10,0))
-            def update_vol_lbl(val): lbl_vol.configure(text=f"{int(val)}%")
-            init_vol = float(get_val('volume', '100'))
-            slider = ctk.CTkSlider(self.frame_config, from_=0, to=100, number_of_steps=100, command=update_vol_lbl)
-            slider.set(init_vol)
-            slider.pack(fill="x", pady=5)
-            self.widgets['volume_slider'] = slider
-            lbl_vol = ctk.CTkLabel(self.frame_config, text=f"{int(init_vol)}%")
-            lbl_vol.pack(anchor="n")
-
-        elif choice == "twitch_create_clip":
-             ctk.CTkLabel(self.frame_config, text="Post Clip link to Chat?").pack(anchor="w")
-             # Default True
-             post_var = ctk.BooleanVar(value=True)
-             if self.initial_data and choice == self.initial_data.get('type'):
-                  post_var.set(self.initial_data.get('post_to_chat', True))
-                  
-             chk = ctk.CTkCheckBox(self.frame_config, text="Yes", variable=post_var)
-             chk.pack(pady=5)
-             self.widgets['post_to_chat'] = post_var
-
-    def browse_folder(self, entry_widget):
-        folder = filedialog.askdirectory()
-        if folder:
-            entry_widget.delete(0, "end")
-            entry_widget.insert(0, folder)
-
-    def browse_file(self, entry_widget):
-        filename = filedialog.askopenfilename(filetypes=[("Audio", "*.mp3 *.wav *.ogg")])
-        if filename:
-            entry_widget.delete(0, "end")
-            entry_widget.insert(0, filename)
-
-    def on_ok(self):
-        t = self.type_var.get()
-        res = {'type': t}
-        
-        # Harvest data
-        try:
-            if 'message' in self.widgets:
-                res['message'] = self.widgets['message'].get()
-            if 'text' in self.widgets:
-                res['text'] = self.widgets['text'].get()
-            if 'voice_id' in self.widgets:
-                res['voice_id'] = self.widgets['voice_id'].get()
-            if 'ms' in self.widgets:
-                 res['ms'] = int(self.widgets['ms'].get())
-            if 'file' in self.widgets:
-                res['file'] = self.widgets['file'].get()
-            if 'folder' in self.widgets:
-                res['folder'] = self.widgets['folder'].get()
-            if 'device' in self.widgets:
-                res['device'] = self.widgets['device'].get()
-            if 'scene' in self.widgets:
-                res['scene'] = self.widgets['scene'].get()
-            if 'action_name' in self.widgets:
-                res['action_name'] = self.widgets['action_name'].get()
-            if 'target' in self.widgets:
-                res['target'] = self.widgets['target'].get()
-            if 'mode' in self.widgets:
-                res['mode'] = self.widgets['mode'].get()
-            if 'state' in self.widgets:
-                res['state'] = self.widgets['state'].get()
-            if 'duration' in self.widgets:
-                 res['duration'] = int(self.widgets['duration'].get())
-            if 'post_to_chat' in self.widgets:
-                 res['post_to_chat'] = self.widgets['post_to_chat'].get()
-                
-            if 'value_slider' in self.widgets:
-                # Convert 0-100 slider to 0.0-1.0 for backend
-                val = self.widgets['value_slider'].get()
-                res['value'] = f"{val/100:.2f}"
-            elif 'value' in self.widgets: # Fallback if widget name mismatch
-                res['value'] = self.widgets['value'].get()
-                
-            if 'volume_slider' in self.widgets:
-                # Keep 0-100 for play_sound config
-                res['volume'] = str(int(self.widgets['volume_slider'].get()))
-            elif 'volume' in self.widgets:
-                res['volume'] = self.widgets['volume'].get()
-                
-            # Probability
-            if hasattr(self, 'prob_slider'):
-                 prob = float(self.prob_slider.get()) / 100.0
-                 res['probability'] = f"{prob:.2f}"
-                
-        except ValueError:
-            messagebox.showerror("Error", "Invalid numeric value!")
-            return
-
-        self.result = res
-        self.destroy()
-
-    def on_type_change(self, choice):
-        # Clear old widgets
-        for w in self.frame_config.winfo_children(): w.destroy()
-        self.widgets = {}
-        
-        # Helper to set value if editing and types match
-        def get_val(key, default=""):
-            if self.initial_data and self.initial_data.get('type') == choice:
-                 return str(self.initial_data.get(key, default))
-            return default
-
-        # Helper for Device Dropdown
-        def add_device_selector():
-            ctk.CTkLabel(self.frame_config, text="Audio Device:").pack(anchor="w")
-            
-            # Get Devices
-            try:
-                if not pygame.get_init(): pygame.init()
-                devices = ['Default'] + sdl_audio.get_audio_device_names(False)
-            except:
-                devices = ['Default']
-                
-            dev_var = ctk.StringVar(value=get_val('device', 'Default'))
-            combo = ctk.CTkComboBox(self.frame_config, variable=dev_var, values=devices)
-            combo.pack(fill="x", pady=5)
-            self.widgets['device'] = dev_var
-
-        if choice == "twitch_chat":
-            ctk.CTkLabel(self.frame_config, text="Chat Message:").pack(anchor="w")
-            entry = ctk.CTkEntry(self.frame_config)
-            entry.insert(0, get_val('message'))
-            entry.pack(fill="x", pady=5)
-            self.widgets['message'] = entry
             
         elif choice == "log":
              ctk.CTkLabel(self.frame_config, text="Log Message:").pack(anchor="w")
@@ -1226,7 +1154,8 @@ class SubActionDialog(ctk.CTkToplevel):
             entry_widget.insert(0, filename)
 
     def on_ok(self):
-        t = self.type_var.get()
+        display = self.type_var.get()
+        t = self.sa_display_to_internal.get(display, display) if hasattr(self, 'sa_display_to_internal') else display
         res = {'type': t}
         
         # Harvest data
@@ -1322,15 +1251,7 @@ class TriggerDialog(ctk.CTkToplevel):
         
         # Create friendly display names mapping
         trigger_types = [
-            ("twitch_command", "Twitch: Chat-Befehl (!command)"),
-            ("youtube_command", "YouTube: Chat-Befehl (!command)"),
-            ("twitch_raid", "Twitch: Raid empfangen"),
-            ("twitch_sub", "Twitch: Neuer Subscriber"),
-            ("twitch_redemption", "Twitch: Kanalpunkt-Einl\xF6sung"),
-            ("twitch_first_message", "Twitch: Erste Nachricht (First Words)"),
-            ("youtube_first_message", "YouTube: Erste Nachricht (First Words)"),
-            ("timer", "Timer (Intervall)"),
-            ("obs_scene", "OBS: Szene gewechselt")
+            (k, v) for k, v in TRIGGER_DISPLAY_NAMES.items()
         ]
         
         self.type_mapping = {display: internal for internal, display in trigger_types}
@@ -1396,6 +1317,9 @@ class TriggerDialog(ctk.CTkToplevel):
              elif internal_type == "obs_scene": val = self.initial_data.get('scene_name', '')
              elif internal_type == "twitch_redemption": val = self.initial_data.get('reward_title', '')
              elif internal_type in ["twitch_first_message", "youtube_first_message"]: val = self.initial_data.get('user', '')
+             elif internal_type == "twitch_watch_streak": val = str(self.initial_data.get('streak_value', '0'))
+             elif internal_type == "youtube_member_milestone": val = str(self.initial_data.get('min_months', 0))
+             elif internal_type == "youtube_super_chat": val = str(self.initial_data.get('min_amount', 0))
              
         self.entry_var.set(val)
 
@@ -1417,6 +1341,30 @@ class TriggerDialog(ctk.CTkToplevel):
         elif internal_type in ["twitch_first_message", "youtube_first_message"]:
             self.lbl_config.configure(text="Spezifischer User (Optional, leer = Alle):")
             self.entry_config.configure(state="normal")
+            self.frame_perm.pack_forget()
+        elif internal_type == "twitch_watch_streak":
+            self.lbl_config.configure(text="Serie-Stufe:")
+            self.entry_config.pack_forget()
+            
+            streak_values = ["0 (Alle)", "3", "5", "7", "10", "15", "20"] + [str(i) for i in range(25, 155, 5)]
+            init_val = val if val and val != '0' else "0 (Alle)"
+            self.streak_var = ctk.StringVar(value=init_val)
+            self.combo_streak = ctk.CTkComboBox(self.config_frame, variable=self.streak_var, values=streak_values)
+            self.combo_streak.pack(fill="x", padx=10, pady=5)
+            self.frame_perm.pack_forget()
+        elif internal_type == "youtube_new_member":
+            self.lbl_config.configure(text="Keine Konfiguration nötig.")
+            self.entry_config.configure(state="disabled")
+            self.frame_perm.pack_forget()
+        elif internal_type == "youtube_member_milestone":
+            self.lbl_config.configure(text="Mindest-Monate (0 = Alle):")
+            self.entry_config.configure(state="normal")
+            if not val: self.entry_var.set("0")
+            self.frame_perm.pack_forget()
+        elif internal_type == "youtube_super_chat":
+            self.lbl_config.configure(text="Mindestbetrag (0 = Alle):")
+            self.entry_config.configure(state="normal")
+            if not val: self.entry_var.set("0")
             self.frame_perm.pack_forget()
         elif internal_type == "timer":
             self.lbl_config.configure(text="Intervall (Sekunden):")
@@ -1521,6 +1469,17 @@ class TriggerDialog(ctk.CTkToplevel):
              data['sub_plan'] = "1000" # Dummy or specific field if needed
         elif t_type in ["twitch_first_message", "youtube_first_message"]:
              data['user'] = val
+        elif t_type == "twitch_watch_streak":
+             sv = '0'
+             if hasattr(self, 'streak_var'):
+                 sv = self.streak_var.get().split(' ')[0]  # "0 (Alle)" -> "0"
+             data['streak_value'] = int(sv) if sv.isdigit() else 0
+        elif t_type == "youtube_new_member":
+             pass  # No config needed
+        elif t_type == "youtube_member_milestone":
+             data['min_months'] = int(val) if val.isdigit() else 0
+        elif t_type == "youtube_super_chat":
+             data['min_amount'] = int(val) if val.isdigit() else 0
         elif t_type == "timer":
             data['interval'] = int(val) if val.isdigit() else 60
         elif t_type == "obs_scene":

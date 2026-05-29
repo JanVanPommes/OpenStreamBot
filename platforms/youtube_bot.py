@@ -233,15 +233,62 @@ class YouTubeBot:
 
     async def handle_message(self, item):
         try:
+            snippet = item.get('snippet', {})
+            msg_type = snippet.get('type', 'textMessageEvent')
             author = item['authorDetails']['displayName']
-            msg = item['snippet']['displayMessage']
             
-            # Timestamp konvertieren
-            # yt format: 2023-10-27T10:00:00.000Z
+            # --- YouTube Events (Membership, SuperChat, etc.) ---
+            if msg_type == 'newSponsorEvent':
+                # Neues Mitglied
+                event_text = f"🎉 {author} ist neues Mitglied geworden!"
+                await self.event_server.broadcast("SystemEvent", {
+                    "type": "youtube_new_member",
+                    "message": event_text,
+                    "user": author
+                })
+                return
+            
+            elif msg_type == 'memberMilestoneChatEvent':
+                # Mitglieder-Jubiläum
+                details = snippet.get('memberMilestoneChatDetails', {})
+                months = details.get('memberMonth', 0)
+                milestone_msg = snippet.get('displayMessage', '')
+                event_text = f"🏅 {author} ist seit {months} Monaten Mitglied!"
+                await self.event_server.broadcast("SystemEvent", {
+                    "type": "youtube_member_milestone",
+                    "message": event_text,
+                    "user": author,
+                    "months": int(months),
+                    "user_message": milestone_msg
+                })
+                return
+
+            elif msg_type in ['superChatEvent', 'superStickerEvent']:
+                # Super Chat / Super Sticker
+                details = snippet.get('superChatDetails', {}) or snippet.get('superStickerDetails', {})
+                amount = details.get('amountDisplayString', '?')
+                currency = details.get('currency', 'EUR')
+                amount_micros = details.get('amountMicros', 0)
+                user_msg = details.get('userComment', '')
+                event_text = f"💰 {author} hat {amount} via Super Chat gesendet!"
+                await self.event_server.broadcast("SystemEvent", {
+                    "type": "youtube_super_chat",
+                    "message": event_text,
+                    "user": author,
+                    "amount_display": amount,
+                    "amount_micros": int(amount_micros),
+                    "currency": currency,
+                    "user_message": user_msg
+                })
+                return
+            
+            # --- Normal Chat Message ---
+            msg = snippet.get('displayMessage', '')
             
             # Badge Logik (Simpel): Ist es der Owner?
             is_owner = item['authorDetails'].get('isChatOwner', False)
             is_mod = item['authorDetails'].get('isChatModerator', False)
+            is_member = item['authorDetails'].get('isChatSponsor', False)
             
             # Custom Color (YT hat keine User Colors, wir nehmen rot für YT)
             color = "#ff0000" 
@@ -249,14 +296,16 @@ class YouTubeBot:
             badges = []
             if is_owner: badges.append({"id": "broadcaster", "version": "1"})
             if is_mod: badges.append({"id": "moderator", "version": "1"})
+            if is_member: badges.append({"id": "subscriber", "version": "1"})
             
             chat_data = {
                 "platform": "youtube",
                 "user": author,
                 "message": msg,
                 "is_mod": is_mod or is_owner,
+                "is_subscriber": is_member,
                 "color": color, # Fallback Farbe für YT
-                "timestamp": str(datetime.datetime.now()), # oder echtes Datum parsen
+                "timestamp": str(datetime.datetime.now()),
                 "emotes": [], # YT Emotes parsen ist komplexer, erst mal raw text
                 "badges": badges,
                 "is_first_message": author not in self.seen_users

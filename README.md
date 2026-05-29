@@ -1,6 +1,6 @@
 # OpenStreamBot
 
-**Version:** 0.4.0  
+**Version:** 0.5.0  
 **Author:** JanVanPommes  
 **A Multi-Platform Stream Bot for Twitch & YouTube**
 
@@ -15,6 +15,9 @@ OpenStreamBot is an open-source bot for streamers that integrates Twitch and You
 - **Flexible Action System**: 
   - Create custom commands (!command)
   - Play sounds (with auto-stop & device selection)
+  - **New in 0.5.0:** Stream Deck & OpenDeck support via `.sdPlugin`
+  - **New in 0.5.0:** YouTube Events (New Members, Milestones, Super Chats)
+  - **New in 0.5.0:** Twitch Watch Streaks & Animated Emotes
   - **New:** Playlists (Random music folder playback)
   - **New:** YouTube Shorts (Random Shorts playback with Overlay)
   - **New:** Auto-Ducking (Lowers music during videos)

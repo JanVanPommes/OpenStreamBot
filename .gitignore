@@ -45,3 +45,7 @@ shorts_cache.json
 
 # Generated Data
 counter_*.txt
+.group_state.json
+available_rewards.json
+shorts_history.json
+start_bot.sh
