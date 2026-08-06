@@ -1,11 +1,20 @@
 import yaml
 import os
+import json
 import asyncio
 import logging
 import pygame.mixer as sa # alias to keep code similar or just rename
 import time
 import random
 import pygame._sdl2.audio as sdl_audio
+
+# Absolute path to queue status JSON
+import sys
+if getattr(sys, 'frozen', False):
+    BASE_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+QUEUE_STATUS_FILE = os.path.join(BASE_DIR, ".queue_status.json")
 
 # Logging setup
 logger = logging.getLogger("ActionEngine")
@@ -36,11 +45,34 @@ class ActionEngine:
         if self.event_server:
             self.event_server.add_message_handler(self.on_ws_message)
 
-        # Action Queue
-        self.action_queue = asyncio.Queue()
-        self.queue_task = asyncio.create_task(self.action_queue_worker())
+        # Action Queues (Multi-Queue Architecture)
+        self.queues = {}
+        self.queue_tasks = {}
+        self.queue_configs = {}
+        self.queue_status = {}
+        self._load_persisted_queue_status()
+        self.get_or_create_queue("Default")
 
         self.load_actions()
+
+    def _load_persisted_queue_status(self):
+        """Loads historical queue status from disk so last_action persists across restarts."""
+        if os.path.exists(QUEUE_STATUS_FILE):
+            try:
+                with open(QUEUE_STATUS_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        for q_name, stat in data.items():
+                            if isinstance(stat, dict):
+                                self.queue_status[q_name] = {
+                                    "current_action": None,
+                                    "last_action": stat.get("last_action"),
+                                    "last_executed_at": stat.get("last_executed_at"),
+                                    "pending": 0,
+                                    "status": "Idle"
+                                }
+            except Exception as e:
+                print(f"[ActionEngine] Error reading initial queue status: {e}")
 
     def load_actions(self):
         self.stop_timers()
@@ -331,6 +363,11 @@ class ActionEngine:
                     
                 if not allowed:
                     return False, {}
+
+                # --- Shared Chat Check ---
+                ignore_shared = trigger_config.get('ignore_shared_chat', False)
+                if ignore_shared and data.get('is_shared', False):
+                    return False, {}
             
             # 1. Simple Match
             if trigger_cmd == received_cmd:
@@ -448,19 +485,183 @@ class ActionEngine:
 
         return True, {}
 
-    async def action_queue_worker(self):
-        while True:
-            action, context_data = await self.action_queue.get()
+    def get_queue_config(self, queue_name="Default"):
+        """Returns configuration dictionary for a given queue."""
+        q_name = queue_name or "Default"
+        if q_name not in self.queue_configs:
+            self.queue_configs[q_name] = {"delay": 0.0, "paused": False, "mode": "sequential"}
+        return self.queue_configs[q_name]
+
+    def set_queue_config(self, queue_name="Default", delay=None, paused=None, mode=None):
+        """Updates settings for a queue."""
+        cfg = self.get_queue_config(queue_name)
+        if delay is not None:
+            cfg["delay"] = max(0.0, float(delay))
+        if paused is not None:
+            cfg["paused"] = bool(paused)
+        if mode is not None:
+            cfg["mode"] = str(mode)
+        print(f"[ActionEngine] Updated Queue '{queue_name}' config: {cfg}")
+        self.save_queue_status_file()
+        return cfg
+
+    def clear_queue(self, queue_name="Default"):
+        """Clears all pending items in a queue."""
+        if queue_name in self.queues:
+            q = self.queues[queue_name]
+            cleared = 0
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                    q.task_done()
+                    cleared += 1
+                except asyncio.QueueEmpty:
+                    break
+            print(f"[ActionEngine] Cleared {cleared} pending items from Queue '{queue_name}'.")
+            self.save_queue_status_file()
+
+    def save_queue_status_file(self):
+        """Persists current queue status snapshot to disk atomically for launcher UI sync across processes."""
+        try:
+            status_data = self.get_all_queues_status()
+            tmp_file = QUEUE_STATUS_FILE + '.tmp'
+            with open(tmp_file, 'w', encoding='utf-8') as f:
+                json.dump(status_data, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_file, QUEUE_STATUS_FILE)
+        except Exception as e:
+            print(f"[ActionEngine] Error saving queue status file: {e}")
+
+    def get_all_queues_status(self):
+        """Returns snapshot of all queue states and configs."""
+        res = {}
+        # Ensure Parallel is represented if tracked
+        all_q_names = set(self.queues.keys()).union(set(self.queue_status.keys()))
+        for q_name in sorted(all_q_names):
+            q = self.queues.get(q_name)
+            pending_count = q.qsize() if q else 0
+            cfg = self.get_queue_config(q_name)
+            stat = self.queue_status.get(q_name, {})
+            res[q_name] = {
+                "name": q_name,
+                "pending": pending_count,
+                "current_action": stat.get("current_action"),
+                "last_action": stat.get("last_action"),
+                "last_executed_at": stat.get("last_executed_at"),
+                "status": "Paused" if cfg.get("paused") else stat.get("status", "Idle"),
+                "paused": cfg.get("paused", False),
+                "delay": cfg.get("delay", 0.0),
+                "mode": cfg.get("mode", "sequential")
+            }
+        return res
+
+    def get_or_create_queue(self, queue_name="Default"):
+        """Gets existing asyncio.Queue for queue_name or initializes a new worker task for it."""
+        q_name = queue_name or "Default"
+        if q_name not in self.queues:
+            q = asyncio.Queue()
+            self.queues[q_name] = q
+            self.queue_configs[q_name] = {"delay": 0.0, "paused": False, "mode": "sequential"}
+            if q_name not in self.queue_status:
+                self.queue_status[q_name] = {"current_action": None, "last_action": None, "pending": 0, "status": "Idle"}
+            else:
+                self.queue_status[q_name]["status"] = "Idle"
+                self.queue_status[q_name]["current_action"] = None
+                self.queue_status[q_name]["pending"] = 0
             try:
-                print(f"[Action Queue] Executing action: {action.get('name', 'Unknown')}")
+                loop = asyncio.get_running_loop()
+                task = loop.create_task(self.action_queue_worker(q_name, q))
+                self.queue_tasks[q_name] = task
+            except RuntimeError:
+                pass
+            print(f"[ActionEngine] Initialized Action Queue: '{q_name}'")
+            self.save_queue_status_file()
+        return self.queues[q_name]
+
+    async def action_queue_worker(self, queue_name, queue_obj):
+        """Worker task processing queued actions for a specific queue."""
+        while True:
+            # Check pause status
+            cfg = self.get_queue_config(queue_name)
+            while cfg.get("paused", False):
+                await asyncio.sleep(0.2)
+                cfg = self.get_queue_config(queue_name)
+
+            action, context_data = await queue_obj.get()
+            act_name = action.get('name', 'Unknown')
+            import time
+            now_ts = time.time()
+            
+            # Update status
+            self.queue_status[queue_name] = {
+                "current_action": act_name,
+                "last_action": act_name,
+                "last_executed_at": now_ts,
+                "pending": queue_obj.qsize(),
+                "status": "Running"
+            }
+            self.save_queue_status_file()
+
+            try:
+                print(f"[Action Queue:{queue_name}] Executing action: {act_name}")
                 await self._execute_action_blocking(action, context_data)
             except Exception as e:
-                print(f"[Action Queue] Error: {e}")
+                print(f"[Action Queue:{queue_name}] Error: {e}")
             finally:
-                self.action_queue.task_done()
+                queue_obj.task_done()
+
+            # Apply queue delay if configured
+            delay = cfg.get("delay", 0.0)
+            if delay > 0:
+                await asyncio.sleep(delay)
+
+            # Reset status if empty
+            if queue_obj.empty():
+                self.queue_status[queue_name] = {
+                    "current_action": None,
+                    "last_action": act_name,
+                    "last_executed_at": now_ts,
+                    "pending": 0,
+                    "status": "Idle"
+                }
+                self.save_queue_status_file()
 
     async def execute_action(self, action, context_data):
-        await self.action_queue.put((action, context_data))
+        """Dispatches an action to its assigned queue or executes in parallel."""
+        queue_name = action.get('queue', 'Default') or 'Default'
+        
+        # Parallel / async queue bypasses sequential queueing
+        if queue_name.lower() in ["parallel", "async", "none"]:
+            act_name = action.get('name', 'Unknown')
+            import time
+            now_ts = time.time()
+            self.queue_status["Parallel"] = {
+                "current_action": act_name,
+                "last_action": act_name,
+                "last_executed_at": now_ts,
+                "pending": 0,
+                "status": "Running"
+            }
+            self.save_queue_status_file()
+            async def _run_par():
+                try:
+                    await self._execute_action_blocking(action, context_data)
+                finally:
+                    self.queue_status["Parallel"] = {
+                        "current_action": None,
+                        "last_action": act_name,
+                        "last_executed_at": now_ts,
+                        "pending": 0,
+                        "status": "Idle"
+                    }
+                    self.save_queue_status_file()
+            asyncio.create_task(_run_par())
+            return
+
+        queue_obj = self.get_or_create_queue(queue_name)
+        await queue_obj.put((action, context_data))
+        self.save_queue_status_file()
 
     async def _execute_action_blocking(self, action, context_data):
         sub_actions = action.get('sub_actions', [])
@@ -570,6 +771,17 @@ class ActionEngine:
                              await self.twitch.connected_channels[0].send(msg)
             else:
                 print("[ActionEngine] Twitch Bot not available for clip creation.")
+
+        # --- TWITCH REWARD STATE ---
+        elif sa_type in ["twitch_enable_reward", "twitch_disable_reward"]:
+            if self.twitch:
+                reward_title = self.replace_vars(config.get('reward_title', ''), ctx)
+                is_enabled = (sa_type == "twitch_enable_reward")
+                if reward_title:
+                    print(f"[ActionEngine] Setze Reward-Status für '{reward_title}' auf {is_enabled}")
+                    await self.twitch.set_reward_state_by_title(reward_title, is_enabled)
+            else:
+                print("[ActionEngine] Twitch Bot nicht verfügbar für Reward-Statusänderung.")
 
         # --- OBS ---
         elif sa_type == "obs_set_scene":
@@ -818,7 +1030,18 @@ class ActionEngine:
             target_name = config.get('action_name', '')
             found = next((a for a in self.actions if a.get('name') == target_name), None)
             if found:
-                 asyncio.create_task(self.execute_action(found, ctx))
+                 target_ctx = ctx.copy()
+                 custom_vars = config.get('variables')
+                 if isinstance(custom_vars, dict):
+                     for k, v in custom_vars.items():
+                         target_ctx[k] = self.replace_vars(v, ctx)
+                 
+                 v_name = config.get('var_name', '').strip()
+                 v_value = config.get('var_value', '')
+                 if v_name:
+                     target_ctx[v_name] = self.replace_vars(v_value, ctx)
+                     
+                 asyncio.create_task(self.execute_action(found, target_ctx))
             else:
                  print(f"[Action] Trigger target '{target_name}' not found.")
 

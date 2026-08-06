@@ -27,7 +27,7 @@ def build_bot_internal():
     # and potential future plugin structures.
     
     cmd_parts = [
-        'pyinstaller', '--noconfirm', '--onedir', '--clean', '--name "bot_internal"',
+        f'"{sys.executable}" -m PyInstaller', '--noconfirm', '--onedir', '--clean', '--name "bot_internal"',
         '--add-data "core:core"',
         '--add-data "platforms:platforms"',
         '--add-data "interface:interface"',
@@ -40,7 +40,7 @@ def build_launcher():
     print("\n[Build] Building Launcher (launcher.py)...")
     
     cmd_parts = [
-        'pyinstaller', '--noconfirm', '--onefile', '--clean', '--windowed', '--name "OpenStreamBot"',
+        f'"{sys.executable}" -m PyInstaller', '--noconfirm', '--onefile', '--clean', '--windowed', '--name "OpenStreamBot"',
         '--add-data "assets:assets"',
         '--add-data "interface:interface"',
         '--add-data "core:core"' # Launcher imports core.profile_manager etc.
@@ -57,7 +57,7 @@ def build_installer():
     print("\n[Build] Building Installer (installer.py)...")
     
     cmd_parts = [
-        'pyinstaller', '--noconfirm', '--onefile', '--clean', '--windowed', '--name "OpenStreamBot_Installer"'
+        f'"{sys.executable}" -m PyInstaller', '--noconfirm', '--onefile', '--clean', '--windowed', '--name "OpenStreamBot_Installer"'
     ]
     
     if os.path.exists("assets/logo.ico"):
@@ -117,7 +117,7 @@ def main():
     sep = ";" if os.name == 'nt' else ":"
     
     cmd_parts = [
-        'pyinstaller', '--noconfirm', '--onefile', '--clean', '--windowed', '--name "OpenStreamBot_Setup"',
+        f'"{sys.executable}" -m PyInstaller', '--noconfirm', '--onefile', '--clean', '--windowed', '--name "OpenStreamBot_Setup"',
         f'--add-data "dist/OpenStreamBot_Dist{sep}DATA"'
     ]
     

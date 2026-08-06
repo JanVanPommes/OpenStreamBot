@@ -49,3 +49,5 @@ counter_*.txt
 available_rewards.json
 shorts_history.json
 start_bot.sh
+.queue_status.json*
+*.osbbackup

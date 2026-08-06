@@ -420,10 +420,21 @@ class YouTubeBot:
             
             elif action == "youtube_stream_start":
                 print("[YouTube] Manueller Stream-Start angefordert.")
+                if not self.youtube:
+                    if not await self.authenticate():
+                        await self.event_server.broadcast("Error", {"message": "YouTube Auth fehlgeschlagen. Bitte im Launcher einloggen."})
+                        return
+
                 chat_id = await self.find_active_broadcast()
                 if chat_id:
                     self.live_chat_id = chat_id
-                    # poll_chat wird von start() loop bemerkt
+                    # Ensure the bot loop is running
+                    if not self.is_running:
+                        try:
+                            with open(".yt_control", "w") as f:
+                                f.write("start")
+                        except Exception as e:
+                            print(f"[YouTube] Fehler beim Schreiben der Control-Datei: {e}")
                 else:
                     await self.event_server.broadcast("Error", {"message": "Kein aktiver YouTube Stream gefunden."})
 

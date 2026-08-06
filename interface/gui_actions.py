@@ -5,6 +5,12 @@ import os
 import pygame._sdl2.audio as sdl_audio
 import pygame
 
+import sys
+if getattr(sys, 'frozen', False):
+    BASE_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # --- Display Name Mappings (Deutsch) ---
 TRIGGER_DISPLAY_NAMES = {
     "twitch_command": "💬 Twitch: Chat-Befehl",
@@ -38,6 +44,8 @@ SUB_ACTION_DISPLAY_NAMES = {
     "set_volume": "🔈 Lautstärke ändern",
     "set_action_state": "🔀 Action-Status ändern",
     "twitch_create_clip": "🎬 Twitch Clip erstellen",
+    "twitch_enable_reward": "💎 Twitch: Reward aktivieren",
+    "twitch_disable_reward": "💎 Twitch: Reward deaktivieren",
     "execute_csharp": "💻 C# Code ausführen",
     "random_action_group": "🎲 Zufalls-Gruppe",
     "elevenlabs_tts": "🗣️ Text-to-Speech (ElevenLabs)",
@@ -143,6 +151,19 @@ class ActionEditorFrame(ctk.CTkFrame):
         self.entry_cooldown = ctk.CTkEntry(self.header_frame, textvariable=self.var_cooldown, width=50)
         self.entry_cooldown.pack(side="right", padx=2)
         
+        # Queue Selection + Config Button
+        self.var_queue = ctk.StringVar(value="Default")
+        ctk.CTkLabel(self.header_frame, text="Queue:").pack(side="right", padx=(5, 2))
+        self.combo_queue = ctk.CTkComboBox(self.header_frame, variable=self.var_queue, width=100, values=["Default", "Parallel", "TTS", "Overlays", "SoundFX"])
+        self.combo_queue.pack(side="right", padx=2)
+        self.var_queue.trace_add("write", lambda *args: self.on_header_change())
+
+        self.btn_test_action = ctk.CTkButton(self.header_frame, text="▶ Testen", width=65, fg_color="#10B981", hover_color="#059669", command=self.test_current_action)
+        self.btn_test_action.pack(side="right", padx=4)
+
+        self.btn_manage_queues = ctk.CTkButton(self.header_frame, text="⚙ Queues", width=65, fg_color="#6366F1", hover_color="#4F46E5", command=self.open_queue_manager)
+        self.btn_manage_queues.pack(side="right", padx=4)
+
         # Enabled Switch
         self.var_enabled = ctk.BooleanVar(value=True)
         self.switch_enabled = ctk.CTkSwitch(self.header_frame, text="Active", variable=self.var_enabled, width=60, command=self.on_hot_switch_toggle)
@@ -194,6 +215,12 @@ class ActionEditorFrame(ctk.CTkFrame):
         # Save Button Main
         self.btn_save = ctk.CTkButton(self, text="Save Actions", fg_color="green", command=self.save_actions)
         self.btn_save.grid(row=1, column=0, columnspan=2, pady=10)
+
+        # Bind scroll events to scroll frames, canvases, and inner frames so gaps/margins scroll smoothly
+        for sc in [self.scroll_subs, self.scroll_triggers, self.action_listbox]:
+            self._bind_scroll_events(sc)
+            if hasattr(sc, '_parent_canvas'): self._bind_scroll_events(sc._parent_canvas)
+            if hasattr(sc, '_parent_frame'): self._bind_scroll_events(sc._parent_frame)
 
         self.refresh_action_list()
 
@@ -309,6 +336,7 @@ class ActionEditorFrame(ctk.CTkFrame):
         # Let's skip list refresh for now to be smoother. The Switch itself shows the state.
 
     def refresh_action_list(self):
+        self._action_item_buttons = {}
         for widget in self.action_listbox.winfo_children():
             widget.destroy()
             
@@ -386,13 +414,10 @@ class ActionEditorFrame(ctk.CTkFrame):
                         hover_color=("gray80", "#333333")
                     )
                     btn.pack(fill="x", pady=2, padx=(10, 0))
+                    self._action_item_buttons[idx] = (btn, group_color)
+                    self._bind_scroll_events(btn)
                 
-            # Bind scroll events
             self._bind_scroll_events(header_frame)
-            
-        # Bind events to all newly created widgets in the listbox
-        for child in self.action_listbox.winfo_children():
-            self._bind_scroll_events(child)
 
     def toggle_group(self, group_name):
         """Collapse or expand a group in the action list."""
@@ -475,29 +500,99 @@ class ActionEditorFrame(ctk.CTkFrame):
         else:
             self.lbl_vars_content.configure(text="Keine Variablen verfügbar")
 
-    # --- SCROLL FIX (from Rewards Editor) ---
+    # --- SCROLL FIX (Universal hierarchy-traversal container mouse wheel routing) ---
     def _on_mouse_wheel(self, event):
-        # Linux (Button-4/5)
+        w = getattr(event, 'widget', None)
+        if not w:
+            return
+
+        canvas = None
+        curr = w
+        while curr:
+            if hasattr(curr, '_parent_canvas'):
+                canvas = getattr(curr, '_parent_canvas', None)
+                if canvas: break
+            w_str = str(curr)
+            if hasattr(self, 'scroll_subs'):
+                sc_canvas = str(getattr(self.scroll_subs, '_parent_canvas', ''))
+                if sc_canvas and sc_canvas in w_str:
+                    canvas = self.scroll_subs._parent_canvas
+                    break
+            if hasattr(self, 'scroll_triggers'):
+                st_canvas = str(getattr(self.scroll_triggers, '_parent_canvas', ''))
+                if st_canvas and st_canvas in w_str:
+                    canvas = self.scroll_triggers._parent_canvas
+                    break
+            if hasattr(self, 'action_listbox'):
+                lb_canvas = str(getattr(self.action_listbox, '_parent_canvas', ''))
+                if lb_canvas and lb_canvas in w_str:
+                    canvas = self.action_listbox._parent_canvas
+                    break
+            curr = getattr(curr, 'master', None)
+
+        if not canvas:
+            return
+
+        units = 0
         if hasattr(event, 'num') and event.num == 4:
-            self.action_listbox._parent_canvas.yview_scroll(-1, "units")
+            units = -1
         elif hasattr(event, 'num') and event.num == 5:
-            self.action_listbox._parent_canvas.yview_scroll(1, "units")
-        # Windows/Mac (Delta)
-        elif hasattr(event, 'delta'):
-            delta = int(-1*(event.delta/120))
-            self.action_listbox._parent_canvas.yview_scroll(delta, "units")
-            
+            units = 1
+        elif hasattr(event, 'delta') and event.delta:
+            units = int(-1 * (event.delta / 120))
+            if units == 0:
+                units = -1 if event.delta > 0 else 1
+
+        if units != 0:
+            try:
+                canvas.yview_scroll(units, "units")
+            except Exception:
+                pass
+
     def _bind_scroll_events(self, widget):
-        # Bind for Windows/Mac
-        widget.bind("<MouseWheel>", self._on_mouse_wheel)
-        # Bind for Linux
-        widget.bind("<Button-4>", self._on_mouse_wheel)
-        widget.bind("<Button-5>", self._on_mouse_wheel)
-        
-        # Recursively bind children
-        for child in widget.winfo_children():
-            self._bind_scroll_events(child)
+        if not widget: return
+        try:
+            widget.bind("<MouseWheel>", self._on_mouse_wheel, add="+")
+            widget.bind("<Button-4>", self._on_mouse_wheel, add="+")
+            widget.bind("<Button-5>", self._on_mouse_wheel, add="+")
+        except Exception:
+            pass
+
+        canvas = getattr(widget, '_parent_canvas', None)
+        if canvas:
+            try:
+                canvas.bind("<MouseWheel>", self._on_mouse_wheel, add="+")
+                canvas.bind("<Button-4>", self._on_mouse_wheel, add="+")
+                canvas.bind("<Button-5>", self._on_mouse_wheel, add="+")
+            except Exception:
+                pass
+
+        parent_frame = getattr(widget, '_parent_frame', None)
+        if parent_frame:
+            try:
+                parent_frame.bind("<MouseWheel>", self._on_mouse_wheel, add="+")
+                parent_frame.bind("<Button-4>", self._on_mouse_wheel, add="+")
+                parent_frame.bind("<Button-5>", self._on_mouse_wheel, add="+")
+            except Exception:
+                pass
+
+        try:
+            for child in widget.winfo_children():
+                self._bind_scroll_events(child)
+        except Exception:
+            pass
     # --- SCROLL FIX END ---
+
+    def _update_sidebar_button_selection(self, selected_index):
+        """Updates visual selection state of sidebar buttons without destroying widgets (no flicker!)."""
+        if not hasattr(self, '_action_item_buttons'):
+            return
+        selected_action = self.actions[selected_index] if 0 <= selected_index < len(self.actions) else None
+        for idx, (btn, group_color) in self._action_item_buttons.items():
+            if idx < len(self.actions) and self.actions[idx] is selected_action:
+                btn.configure(fg_color=group_color, border_color=group_color)
+            else:
+                btn.configure(fg_color="transparent", border_color=("gray75", "#444444"))
 
     def select_action(self, index):
         self.commit_current_changes()
@@ -505,17 +600,75 @@ class ActionEditorFrame(ctk.CTkFrame):
         self.current_action = self.actions[index]
         self.var_action_name.set(self.current_action.get('name', ''))
         self.var_action_group.set(self.current_action.get('group', 'General'))
+        self.var_queue.set(self.current_action.get('queue', 'Default'))
         self.var_cooldown.set(str(self.current_action.get('cooldown', 0)))
         self.var_enabled.set(self.current_action.get('enabled', True))
         self._update_group_combo()
-        self.refresh_action_list()
+        
+        # Smooth in-place selection update (Zero flickering!)
+        self._update_sidebar_button_selection(index)
+        
         self.refresh_details()
         self._is_loading_action = False
+
+    def test_current_action(self):
+        """Executes the currently selected action directly via ActionEngine or WS trigger."""
+        if not hasattr(self, 'current_action') or not self.current_action:
+            return
+        act_name = self.current_action.get('name')
+        if not act_name:
+            return
+
+        self.commit_current_changes()
+
+        port = 8080
+        cfg_file = os.path.join(BASE_DIR, "config.yaml")
+        if os.path.exists(cfg_file):
+            try:
+                import yaml
+                with open(cfg_file, "r", encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f)
+                    if isinstance(cfg, dict) and "server" in cfg:
+                        port = cfg["server"].get("port", 8080)
+            except Exception:
+                pass
+
+        def _execute_or_send():
+            sent = False
+            try:
+                import websockets, json, asyncio
+                async def _send():
+                    async with websockets.connect(f"ws://localhost:{port}", open_timeout=2) as ws:
+                        await ws.send(json.dumps({"event": "trigger_action_by_name", "data": {"action": act_name}}))
+                asyncio.run(_send())
+                sent = True
+                print(f"[ActionEditor] Sent WS trigger for '{act_name}' to port {port}")
+            except Exception as e:
+                print(f"[ActionEditor] WS trigger failed ({e}), falling back to direct ActionEngine execution.")
+
+            if not sent:
+                try:
+                    import asyncio
+                    from core.action_engine import ActionEngine
+                    ae = ActionEngine(self.config_file)
+                    asyncio.run(ae.execute_action(self.current_action, {}))
+                    print(f"[ActionEditor] Executed action '{act_name}' directly via ActionEngine.")
+                except Exception as ex:
+                    print(f"[ActionEditor] Direct execution error: {ex}")
+
+        import threading
+        threading.Thread(target=_execute_or_send, daemon=True).start()
+
+    def open_queue_manager(self):
+        """Opens the Queue Manager & Live Monitor Dialog."""
+        engine = getattr(self, 'action_engine', None)
+        QueueManagerDialog(self, action_engine=engine)
 
     def commit_current_changes(self):
         if self.current_action:
             self.current_action['name'] = self.var_action_name.get()
             self.current_action['group'] = self.var_action_group.get()
+            self.current_action['queue'] = self.var_queue.get() or 'Default'
             self.current_action['enabled'] = self.var_enabled.get()
             try:
                 self.current_action['cooldown'] = int(self.var_cooldown.get() or 0)
@@ -594,7 +747,7 @@ class ActionEditorFrame(ctk.CTkFrame):
             ctk.CTkButton(btn_frame, text="✎", width=24, fg_color="#3B82F6", hover_color="#2563EB", command=lambda x=t: self.edit_trigger(x)).pack(side="right", padx=2)
             # Del btn
             ctk.CTkButton(btn_frame, text="X", width=24, fg_color="#EF4444", hover_color="#DC2626", command=lambda x=t: self.remove_trigger(x)).pack(side="right", padx=2)
-
+            self._bind_scroll_events(f)
 
         # Sub Actions
         sub_actions = self.current_action.get('sub_actions', [])
@@ -612,8 +765,12 @@ class ActionEditorFrame(ctk.CTkFrame):
                     summary += f": '{s['action_name']}' -> {s.get('state')} ({s.get('duration')}s)"
                 else: 
                     summary += f": -> {s['action_name']}"
+                    if s.get('var_name'):
+                        summary += f" ({s['var_name']}={s.get('var_value')})"
             elif s['type'] == 'random_action_group':
                 summary += f": {len(s.get('targets', []))} Actions"
+            elif s['type'] in ['twitch_enable_reward', 'twitch_disable_reward']:
+                summary += f": {s.get('reward_title', '')}"
             
             lbl = ctk.CTkLabel(f, text=summary)
             lbl.pack(side="left", padx=5)
@@ -634,6 +791,7 @@ class ActionEditorFrame(ctk.CTkFrame):
 
             ctk.CTkButton(btn_frame, text="✎", width=24, fg_color="#3B82F6", hover_color="#2563EB", command=lambda x=s: self.edit_sub_action(x)).pack(side="right", padx=2)
             ctk.CTkButton(btn_frame, text="X", width=24, fg_color="#EF4444", hover_color="#DC2626", command=lambda x=s: self.remove_sub(x)).pack(side="right", padx=2)
+            self._bind_scroll_events(f)
 
     def remove_trigger(self, item):
         self.current_action['triggers'].remove(item)
@@ -906,7 +1064,7 @@ class SubActionDialog(ctk.CTkToplevel):
              ctk.CTkLabel(self.frame_config, text="No configuration needed.\nMake sure to 'Sync Shorts' in 'Accounts' tab!").pack(pady=10)
 
         elif choice == "trigger_action":
-            ctk.CTkLabel(self.frame_config, text="Action Name to Trigger:").pack(anchor="w")
+            ctk.CTkLabel(self.frame_config, text="Auszulösende Action:").pack(anchor="w")
             
             # Get Action Names
             action_names = sorted([a.get('name', 'Untitled') for a in self.master.actions])
@@ -915,6 +1073,62 @@ class SubActionDialog(ctk.CTkToplevel):
             combo = ctk.CTkComboBox(self.frame_config, variable=act_var, values=action_names)
             combo.pack(fill="x", pady=5)
             self.widgets['action_name'] = act_var
+
+            # Custom variable configuration
+            ctk.CTkLabel(self.frame_config, text="Variable weitergeben (Optional):", font=("", 12, "bold")).pack(anchor="w", pady=(15, 5))
+            
+            ctk.CTkLabel(self.frame_config, text="Name der Variable in Ziel-Action:").pack(anchor="w")
+            var_name_entry = ctk.CTkEntry(self.frame_config, placeholder_text="z.B. ziel_user")
+            var_name_entry.insert(0, get_val('var_name'))
+            var_name_entry.pack(fill="x", pady=5)
+            self.widgets['var_name'] = var_name_entry
+
+            ctk.CTkLabel(self.frame_config, text="Wert / Quelle:").pack(anchor="w")
+            
+            options = [
+                "Keine", 
+                "%user% (Auslösender Benutzer)", 
+                "%message% (Chatnachricht)", 
+                "%game% (Aktuelles Spiel)", 
+                "%input% (Kanalpunkte Eingabe)", 
+                "Eigener Wert..."
+            ]
+            
+            initial_val = get_val('var_value')
+            if not initial_val:
+                start_opt = "Keine"
+            elif initial_val == "%user%":
+                start_opt = "%user% (Auslösender Benutzer)"
+            elif initial_val == "%message%":
+                start_opt = "%message% (Chatnachricht)"
+            elif initial_val == "%game%":
+                start_opt = "%game% (Aktuelles Spiel)"
+            elif initial_val == "%input%":
+                start_opt = "%input% (Kanalpunkte Eingabe)"
+            else:
+                start_opt = "Eigener Wert..."
+                
+            opt_var = ctk.StringVar(value=start_opt)
+            
+            custom_val_frame = ctk.CTkFrame(self.frame_config, fg_color="transparent")
+            custom_val_entry = ctk.CTkEntry(custom_val_frame, placeholder_text="Eigener Wert oder Text...")
+            
+            if start_opt == "Eigener Wert...":
+                custom_val_entry.insert(0, initial_val)
+                custom_val_frame.pack(fill="x", pady=5)
+                
+            def on_opt_change(selected_opt):
+                if selected_opt == "Eigener Wert...":
+                    custom_val_frame.pack(fill="x", pady=5)
+                else:
+                    custom_val_frame.pack_forget()
+                    
+            opt_combo = ctk.CTkComboBox(self.frame_config, variable=opt_var, values=options, command=on_opt_change)
+            opt_combo.pack(fill="x", pady=5)
+            custom_val_entry.pack(fill="x")
+            
+            self.widgets['var_option'] = opt_var
+            self.widgets['custom_var_value'] = custom_val_entry
 
         elif choice == "set_action_state":
             ctk.CTkLabel(self.frame_config, text="Target Action Name:").pack(anchor="w")
@@ -1005,6 +1219,30 @@ class SubActionDialog(ctk.CTkToplevel):
              chk = ctk.CTkCheckBox(self.frame_config, text="Yes", variable=post_var)
              chk.pack(pady=5)
              self.widgets['post_to_chat'] = post_var
+
+        elif choice in ["twitch_enable_reward", "twitch_disable_reward"]:
+            ctk.CTkLabel(self.frame_config, text="Twitch Reward auswählen:").pack(anchor="w")
+            
+            # Load rewards
+            import json
+            rewards_titles = []
+            if os.path.exists("available_rewards.json"):
+                try:
+                    with open("available_rewards.json", "r", encoding="utf-8") as f:
+                        rewards_data = json.load(f)
+                        rewards_titles = [r.get('title') for r in rewards_data if r.get('title')]
+                except Exception as e:
+                    print(f"Failed to load rewards for subaction dropdown: {e}")
+            
+            if not rewards_titles:
+                rewards_titles = ["Keine Rewards gefunden. Bitte aktualisieren in 'Twitch Rewards'."]
+                
+            rewards_titles = sorted(rewards_titles)
+            
+            reward_var = ctk.StringVar(value=get_val('reward_title', rewards_titles[0] if rewards_titles else ""))
+            combo = ctk.CTkComboBox(self.frame_config, variable=reward_var, values=rewards_titles)
+            combo.pack(fill="x", pady=5)
+            self.widgets['reward_title'] = reward_var
 
         elif choice == "execute_csharp":
              # Container for Mode Selection
@@ -1135,6 +1373,43 @@ class SubActionDialog(ctk.CTkToplevel):
                  
              ctk.CTkButton(self.frame_config, text="+ Sub-Aktion hinzufügen", command=add_row).pack(pady=5)
 
+        self._bind_scroll_events(self.frame_config)
+        if hasattr(self.frame_config, '_parent_canvas'):
+            self._bind_scroll_events(self.frame_config._parent_canvas)
+        if hasattr(self.frame_config, '_parent_frame'):
+            self._bind_scroll_events(self.frame_config._parent_frame)
+
+    def _on_mouse_wheel(self, event):
+        units = 0
+        if hasattr(event, 'num') and event.num == 4:
+            units = -1
+        elif hasattr(event, 'num') and event.num == 5:
+            units = 1
+        elif hasattr(event, 'delta') and event.delta:
+            units = int(-1 * (event.delta / 120))
+            if units == 0:
+                units = -1 if event.delta > 0 else 1
+
+        if units != 0 and hasattr(self, 'frame_config') and hasattr(self.frame_config, '_parent_canvas'):
+            try:
+                self.frame_config._parent_canvas.yview_scroll(units, "units")
+            except Exception:
+                pass
+
+    def _bind_scroll_events(self, widget):
+        if not widget: return
+        try:
+            widget.bind("<MouseWheel>", self._on_mouse_wheel, add="+")
+            widget.bind("<Button-4>", self._on_mouse_wheel, add="+")
+            widget.bind("<Button-5>", self._on_mouse_wheel, add="+")
+        except Exception:
+            pass
+        try:
+            for child in widget.winfo_children():
+                self._bind_scroll_events(child)
+        except Exception:
+            pass
+
     def browse_folder(self, entry_widget):
         folder = filedialog.askdirectory()
         if folder:
@@ -1182,6 +1457,8 @@ class SubActionDialog(ctk.CTkToplevel):
                 res['action_name'] = self.widgets['action_name'].get()
             if 'target' in self.widgets:
                 res['target'] = self.widgets['target'].get()
+            if 'reward_title' in self.widgets:
+                res['reward_title'] = self.widgets['reward_title'].get()
             if 'mode' in self.widgets:
                 res['mode'] = self.widgets['mode'].get()
             if 'state' in self.widgets:
@@ -1230,6 +1507,24 @@ class SubActionDialog(ctk.CTkToplevel):
             if hasattr(self, 'prob_slider'):
                  prob = float(self.prob_slider.get()) / 100.0
                  res['probability'] = f"{prob:.2f}"
+
+            if 'var_name' in self.widgets:
+                res['var_name'] = self.widgets['var_name'].get().strip()
+                
+            if 'var_option' in self.widgets:
+                opt = self.widgets['var_option'].get()
+                if opt == "Keine":
+                    res['var_value'] = ""
+                elif opt.startswith("%user%"):
+                    res['var_value'] = "%user%"
+                elif opt.startswith("%message%"):
+                    res['var_value'] = "%message%"
+                elif opt.startswith("%game%"):
+                    res['var_value'] = "%game%"
+                elif opt.startswith("%input%"):
+                    res['var_value'] = "%input%"
+                elif opt == "Eigener Wert...":
+                    res['var_value'] = self.widgets['custom_var_value'].get()
                 
         except ValueError:
             messagebox.showerror("Error", "Invalid numeric value!")
@@ -1277,6 +1572,12 @@ class TriggerDialog(ctk.CTkToplevel):
         self.perm_combo = ctk.CTkComboBox(self.frame_perm, variable=self.perm_var, 
                                           values=["Everyone", "Subscriber", "VIP", "Moderator", "Broadcaster"])
         self.perm_combo.pack(fill="x", pady=5)
+
+        # --- IGNORE SHARED CHAT (Conditional) ---
+        self.frame_shared_chat = ctk.CTkFrame(self.config_frame, fg_color="transparent")
+        self.ignore_shared_var = ctk.BooleanVar(value=False)
+        self.chk_ignore_shared = ctk.CTkCheckBox(self.frame_shared_chat, text="Gemeinsamen Chat ignorieren", variable=self.ignore_shared_var)
+        self.chk_ignore_shared.pack(anchor="w", pady=5)
         
         self.entry_var = ctk.StringVar()
         self.lbl_config = ctk.CTkLabel(self.config_frame, text="Command (!cmd):")
@@ -1304,13 +1605,17 @@ class TriggerDialog(ctk.CTkToplevel):
         
         # Map display name back to internal type
         internal_type = self.type_mapping.get(choice, "twitch_command")
+
+        if hasattr(self, 'frame_perm'): self.frame_perm.pack_forget()
+        if hasattr(self, 'frame_shared_chat'): self.frame_shared_chat.pack_forget()
         
         # But if editing, restore value
         val = ""
         if self.initial_data and self.initial_data.get('type') == internal_type:
              if internal_type == "twitch_command": 
-                 val = self.initial_data.get('command', '')
-                 self.perm_var.set(self.initial_data.get('permission', 'Everyone'))
+                  val = self.initial_data.get('command', '')
+                  self.perm_var.set(self.initial_data.get('permission', 'Everyone'))
+                  self.ignore_shared_var.set(self.initial_data.get('ignore_shared_chat', False))
              elif internal_type == "youtube_command": val = self.initial_data.get('command', '')
              elif internal_type == "twitch_raid": val = str(self.initial_data.get('min_viewers', 0))
              elif internal_type == "timer": val = str(self.initial_data.get('interval', 60))
@@ -1327,6 +1632,7 @@ class TriggerDialog(ctk.CTkToplevel):
             self.lbl_config.configure(text="Befehlsname (z.B. !start):")
             self.entry_config.configure(state="normal")
             self.frame_perm.pack(fill="x", pady=5)
+            self.frame_shared_chat.pack(fill="x", pady=5)
         elif internal_type == "youtube_command":
             self.lbl_config.configure(text="Befehlsname (z.B. !start):")
             self.entry_config.configure(state="normal")
@@ -1460,6 +1766,7 @@ class TriggerDialog(ctk.CTkToplevel):
             if val and not val.startswith("!"): val = "!" + val
             data['command'] = val
             data['permission'] = self.perm_var.get()
+            data['ignore_shared_chat'] = self.ignore_shared_var.get()
         elif t_type == "youtube_command":
             if val and not val.startswith("!"): val = "!" + val
             data['command'] = val
@@ -1491,9 +1798,154 @@ class TriggerDialog(ctk.CTkToplevel):
              data['reward_title'] = val
              
         # Speichere die Blacklist
-        bl = self.blacklist_var.get().strip()
-        if bl: data['blacklist_users'] = bl
-        elif 'blacklist_users' in data: del data['blacklist_users']
-            
         self.result = data
         self.destroy()
+
+
+class QueueManagerDialog(ctk.CTkToplevel):
+    """Dialog for configuring delays, pause/resume, and clearing action queues."""
+    def __init__(self, parent, action_engine=None):
+        super().__init__(parent)
+        self.title("Action Queue Manager & Status Monitor")
+        self.geometry("680x480")
+        self.action_engine = action_engine
+
+        # Title Label
+        ctk.CTkLabel(self, text="Action Queue Manager & Live Status", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(15, 5))
+        ctk.CTkLabel(self, text="Konfiguriere Verzögerungen (Delay), Pausiere Queues oder leere ausstehende Actions.", text_color="gray70").pack(pady=(0, 10))
+
+        # Scrollable Frame for Queues
+        self.scroll = ctk.CTkScrollableFrame(self, width=630, height=320)
+        self.scroll.pack(fill="both", expand=True, padx=15, pady=10)
+
+        # Top Action Bar (Refresh + Add Custom Queue)
+        top_bar = ctk.CTkFrame(self, fg_color="transparent")
+        top_bar.pack(fill="x", padx=15, pady=(0, 15))
+
+        self.entry_new_q = ctk.CTkEntry(top_bar, placeholder_text="Neuer Queue Name...", width=160)
+        self.entry_new_q.pack(side="left", padx=5)
+
+        ctk.CTkButton(top_bar, text="+ Queue hinzufügen", width=120, fg_color="#3B82F6", hover_color="#2563EB", command=self.add_custom_queue).pack(side="left", padx=5)
+        ctk.CTkButton(top_bar, text="🔄 Aktualisieren", width=110, fg_color="#6B7280", hover_color="#4B5563", command=self.refresh_queues).pack(side="right", padx=5)
+
+        self.refresh_queues()
+
+    def add_custom_queue(self):
+        q_name = self.entry_new_q.get().strip()
+        if q_name and self.action_engine:
+            self.action_engine.get_or_create_queue(q_name)
+            self.entry_new_q.delete(0, "end")
+            self.refresh_queues()
+
+    def refresh_queues(self):
+        for w in self.scroll.winfo_children():
+            w.destroy()
+
+        if self.action_engine:
+            statuses = self.action_engine.get_all_queues_status()
+        else:
+            statuses = {
+                "Default": {"name": "Default", "pending": 0, "status": "Idle", "paused": False, "delay": 0.0},
+                "Parallel": {"name": "Parallel", "pending": 0, "status": "Concurrent (No Queue)", "paused": False, "delay": 0.0},
+                "TTS": {"name": "TTS", "pending": 0, "status": "Idle", "paused": False, "delay": 0.5},
+                "Overlays": {"name": "Overlays", "pending": 0, "status": "Idle", "paused": False, "delay": 0.0},
+                "SoundFX": {"name": "SoundFX", "pending": 0, "status": "Idle", "paused": False, "delay": 0.0},
+            }
+
+        for q_name, data in statuses.items():
+            card = ctk.CTkFrame(self.scroll, fg_color=("gray90", "#2B2B2B"), border_width=1, border_color=("gray75", "#3F3F46"), corner_radius=8)
+            card.pack(fill="x", pady=5, padx=5)
+
+            # Left Info
+            info_frame = ctk.CTkFrame(card, fg_color="transparent")
+            info_frame.pack(side="left", padx=10, pady=10)
+
+            ctk.CTkLabel(info_frame, text=f"Queue: {q_name}", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w")
+            
+            st_txt = f"Status: {data.get('status', 'Idle')}  |  Ausstehend: {data.get('pending', 0)}"
+            if data.get('current_action'):
+                st_txt += f"  |  Läuft: '{data['current_action']}'"
+            ctk.CTkLabel(info_frame, text=st_txt, text_color="gray70", font=ctk.CTkFont(size=11)).pack(anchor="w")
+
+            # Right Controls
+            ctrl_frame = ctk.CTkFrame(card, fg_color="transparent")
+            ctrl_frame.pack(side="right", padx=10, pady=10)
+
+            # Delay
+            ctk.CTkLabel(ctrl_frame, text="Delay (s):").pack(side="left", padx=(0, 2))
+            var_delay = ctk.StringVar(value=str(data.get("delay", 0.0)))
+            entry_delay = ctk.CTkEntry(ctrl_frame, textvariable=var_delay, width=50)
+            entry_delay.pack(side="left", padx=2)
+
+            def save_delay(qn=q_name, vd=var_delay):
+                try:
+                    val = float(vd.get())
+                    if self.action_engine:
+                        self.action_engine.set_queue_config(qn, delay=val)
+                except ValueError: pass
+
+            entry_delay.bind("<FocusOut>", lambda e, qn=q_name, vd=var_delay: save_delay(qn, vd))
+
+            # Pause / Resume
+            is_paused = data.get("paused", False)
+            btn_pause_txt = "▶ Resume" if is_paused else "⏸ Pause"
+            btn_pause_color = "#10B981" if is_paused else "#F59E0B"
+            btn_pause = ctk.CTkButton(
+                ctrl_frame, text=btn_pause_txt, fg_color=btn_pause_color, width=75,
+                command=lambda qn=q_name, p=is_paused: self.toggle_pause(qn, p)
+            )
+            btn_pause.pack(side="left", padx=4)
+
+            # Clear
+            btn_clear = ctk.CTkButton(
+                ctrl_frame, text="🗑 Clear", fg_color="#EF4444", hover_color="#DC2626", width=60,
+                command=lambda qn=q_name: self.clear_queue(qn)
+            )
+            btn_clear.pack(side="left", padx=2)
+
+        self._bind_scroll_events(self.scroll)
+        if hasattr(self.scroll, '_parent_canvas'):
+            self._bind_scroll_events(self.scroll._parent_canvas)
+        if hasattr(self.scroll, '_parent_frame'):
+            self._bind_scroll_events(self.scroll._parent_frame)
+
+    def _on_mouse_wheel(self, event):
+        units = 0
+        if hasattr(event, 'num') and event.num == 4:
+            units = -1
+        elif hasattr(event, 'num') and event.num == 5:
+            units = 1
+        elif hasattr(event, 'delta') and event.delta:
+            units = int(-1 * (event.delta / 120))
+            if units == 0:
+                units = -1 if event.delta > 0 else 1
+
+        if units != 0 and hasattr(self.scroll, '_parent_canvas'):
+            try:
+                self.scroll._parent_canvas.yview_scroll(units, "units")
+            except Exception:
+                pass
+
+    def _bind_scroll_events(self, widget):
+        if not widget: return
+        try:
+            widget.bind("<MouseWheel>", self._on_mouse_wheel, add="+")
+            widget.bind("<Button-4>", self._on_mouse_wheel, add="+")
+            widget.bind("<Button-5>", self._on_mouse_wheel, add="+")
+        except Exception:
+            pass
+        try:
+            for child in widget.winfo_children():
+                self._bind_scroll_events(child)
+        except Exception:
+            pass
+
+    def toggle_pause(self, q_name, current_paused):
+        if self.action_engine:
+            self.action_engine.set_queue_config(q_name, paused=not current_paused)
+        self.refresh_queues()
+
+    def clear_queue(self, q_name):
+        if self.action_engine:
+            self.action_engine.clear_queue(q_name)
+        self.refresh_queues()

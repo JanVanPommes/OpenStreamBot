@@ -1,45 +1,38 @@
 # OpenStreamBot
 
-**Version:** 0.5.0  
+**Version:** 0.6.0  
 **Author:** JanVanPommes  
 **A Multi-Platform Stream Bot for Twitch & YouTube**
 
-OpenStreamBot is an open-source bot for streamers that integrates Twitch and YouTube, can control OBS Studio, and offers a flexible action system. Perfect for creators who want to automate and make their streams more interactive.
+OpenStreamBot is a powerful, open-source automation bot for streamers that integrates Twitch and YouTube, controls OBS Studio, and provides a multi-queue action system with audio, overlays, and hardware stream deck support.
 
 ---
 
-## 🎯 Features
+## 🎯 Key Features (v0.6.0)
 
-- **Multi-Platform Chat**: Twitch and YouTube Live Chat in one dashboard
-- **OBS Studio Integration**: Switch scenes, control sources, react to OBS events
-- **Flexible Action System**: 
-  - Create custom commands (!command)
-  - Play sounds (with auto-stop & device selection)
-  - **New in 0.5.0:** Stream Deck & OpenDeck support via `.sdPlugin`
-  - **New in 0.5.0:** YouTube Events (New Members, Milestones, Super Chats)
-  - **New in 0.5.0:** Twitch Watch Streaks & Animated Emotes
-  - **New:** Playlists (Random music folder playback)
-  - **New:** YouTube Shorts (Random Shorts playback with Overlay)
-  - **New:** Auto-Ducking (Lowers music during videos)
-  - **New:** Timer Triggers (Interval based actions)
-  - **New:** Channel Points (Trigger & Management)
-  - **New:** User Permissions (Mod/VIP/Sub only commands)
-  - **New:** HotSwitch (Instant Action Toggling)
-  - **New in 0.4.0:** ElevenLabs TTS Integration (Text-to-Speech)
-  - **New in 0.4.0:** Network-aware Twitch Authentication (Offline boot support)
-  - **New in 0.3.3:** YouTube First Words & User Blacklist
-  - **New in 0.3.3:** Action Groups (Nested Probability Sub-actions)
-  - **New in 0.3.3:** Modernized GUI "Card" Layout
-  - **New in 0.3.2:** First Words Trigger
-  - **New in 0.3.2:** Twitch Clips & Probability Actions
-  - **New in 0.3.2:** C# Code Execution (Run .cs/Scripts/Projects)
-  - React to events (raids, subs, etc.)
-  - Grouping and organization
-- **Profile Manager**: Save and load different bot configurations
-- **Web Dashboard**: Modern web UI for chat management and overview
-- **Quota Optimization**: Activate YouTube only on-demand (saves API quota)
-- **GUI Launcher**: Easy management via desktop application
-- **Windows Installer**: Easy Setup wizard for Windows users
+- **⚡ Multi-Queue Action Architecture**:
+  - Assign actions to dedicated execution queues (`Default`, `TTS`, `Overlays`, `SoundFX`, or `Parallel`).
+  - Configure delays between queue items, pause/resume queues on demand, or clear pending tasks.
+  - Live Action Queue Status widget in the Control Center dashboard.
+- **📦 Full Backup & Migration System**:
+  - Export complete bot profiles into `.osbbackup` ZIP archives including all local audio, scripts, and image assets.
+  - One-click import to restore profiles on any new OpenStreamBot installation.
+- **💜 Advanced Twitch Integration**:
+  - React to Chat Commands, Raids, Subscriptions, Followers, First Words, Watch Streaks, and Channel Point Redemptions.
+  - **Dynamic Reward Controls**: Enable (`twitch_enable_reward`) or Pause (`twitch_disable_reward`) Twitch Channel Point rewards on the fly without deleting them.
+  - Full support for animated chat emotes and scaled "Emote Only" chat messages.
+- **🔴 YouTube Live Chat & Events**:
+  - Trigger actions on YouTube Chat Messages, YouTube First Words, New Memberships, Member Milestones, and Super Chats.
+  - Play random YouTube Shorts with overlay auto-ducking.
+- **🗣️ ElevenLabs Text-to-Speech (TTS)**:
+  - Generate natural AI voice output directly from chat triggers or sub-actions.
+- **🎮 Stream Deck & OpenDeck Support**:
+  - Native `.sdPlugin` for Elgato Stream Deck and OpenDeck controllers to trigger actions by name with physical buttons.
+- **🎥 OBS Studio Integration**:
+  - Control OBS WebSocket 5.x: Switch scenes, toggle sources, change audio filters, and capture screenshots.
+- **⚙️ Modern GUI Launcher & Settings**:
+  - Structured card-based Configuration screen for Twitch, YouTube, OBS, and Audio settings.
+  - Smooth action editor with zero UI flickering and 100% reliable sub-action list scrolling.
 
 ---
 
@@ -47,294 +40,74 @@ OpenStreamBot is an open-source bot for streamers that integrates Twitch and You
 
 - **Python 3.10+** (recommended: 3.12)
 - **OBS Studio** (optional, for OBS features)
-- **OBS WebSocket Plugin** (integrated in OBS 28+)
+- **OBS WebSocket Plugin** (built into OBS 28+)
 - **Operating System**: Linux, macOS, or Windows
 
 ---
 
-## 🚀 Installation
+## 🚀 Installation & Setup
 
-### 📦 Easy Installation (Windows)
+### 📦 Windows Setup (Installer / Direct)
 
-1. **Download**: Go to the [Releases](https://github.com/JanVanPommes/OpenStreamBot/releases) page.
-2. **Get the Installer**: Download the latest `OpenStreamBot_Setup.exe`.
-   > **Note**: This file is automatically built via GitHub Actions for every update!
-3. **Install**: Run the installer, choose your folder, done.
-4. **Updates**: The Launcher will automatically notify you when a new version is available!
+1. Download `OpenStreamBot_Setup.exe` from [Releases](https://github.com/JanVanPommes/OpenStreamBot/releases).
+2. Run the setup wizard and start **OpenStreamBot** from your Start Menu or Desktop shortcut.
 
-### 🛠️ Manual Installation / From Source
+### 🛠️ Manual Installation (Linux / macOS / Windows)
 
-#### **Windows**
-1. **Install Python**: Download Python 3.10+ from [python.org](https://www.python.org/downloads/windows/) (Check "Add Python to PATH"!).
-2. **Clone**: `git clone https://github.com/JanVanPommes/OpenStreamBot.git`
-3. **Setup**: Double-click `start.bat`. It will help you create a venv on first run.
-   - *Manual alternative*:
-     ```cmd
-     python -m venv venv
-     venv\Scripts\activate
-     python -m pip install -r requirements.txt
-     ```
-   - *Build EXE yourself*:
-     ```cmd
-     pip install pyinstaller
-     python build.py
-     ```
-
-#### **macOS**
-1. **Python / Homebrew**: `brew install python` (standard if Homebrew is installed).
-2. **Clone**: `git clone https://github.com/JanVanPommes/OpenStreamBot.git`
-3. **Setup**:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   chmod +x start_launcher.sh
-   # Run
-   ./start_launcher.sh
-   ```
-
-#### **Linux (Ubuntu/Debian)**
-1. **Prerequisites**:
-   ```bash
-   sudo apt update
-   sudo apt install python3-venv python3-tk
-   ```
-2. **Clone & Setup**:
-   ```bash
-   git clone https://github.com/JanVanPommes/OpenStreamBot.git
-   cd OpenStreamBot
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   chmod +x start_launcher.sh
-   # Run
-   ./start_launcher.sh
-   ```
-
-### 4. Create Configuration
-Copy the example configuration:
 ```bash
-cp config.example.yaml config.yaml
-```
+# Clone the repository
+git clone https://github.com/JanVanPommes/OpenStreamBot.git
+cd OpenStreamBot
 
-Edit `config.yaml` with your data:
-```yaml
-server:
-  host: localhost
-  port: 8080
+# Create and activate virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-twitch:
-  enabled: true
-  client_id: YOUR_TWITCH_CLIENT_ID      # From https://dev.twitch.tv/console
-  client_secret: YOUR_TWITCH_SECRET
-  channel: your_twitch_username
+# Install dependencies
+pip install -r requirements.txt
 
-youtube:
-  enabled: true  # Set to false if not needed
-  client_secret_file: client_secret.json
-  token_file: token_youtube.json
-
-obs:
-  host: localhost
-  port: 4455
-  password: ''  # Your OBS WebSocket password (if set)
-```
-
----
-
-## 🔐 Connect Accounts
-
-### Twitch
-1. Create an app on [Twitch Developer Console](https://dev.twitch.tv/console/apps)
-2. **OAuth Redirect URL**: `http://localhost:8080`
-3. Copy **Client ID** and **Secret** to `config.yaml`
-4. Start the launcher: `python launcher.py`
-5. Go to **Accounts** → **"Login with Twitch"**
-
-### YouTube (Optional)
-For YouTube, you need your own Google Cloud Project due to API quota limits.
-
-➡️ **Detailed Guide**: See [`YOUTUBE_SETUP_EN.md`](YOUTUBE_SETUP_EN.md)
-
-**Quick Summary**:
-1. [Google Cloud Console](https://console.cloud.google.com/) → Create project
-2. Enable YouTube Data API v3
-3. Create OAuth Client (Desktop App)
-4. Download `client_secret.json` and place in project folder
-5. In Launcher: **Accounts** → **"Login with Google"**
-
----
-
-## ▶️ Start Bot
-
-- **Windows**: Double-click `start.bat`
-- **Linux/macOS**: `./start_launcher.sh` in terminal or `python launcher.py`
-```bash
-# Manual execution
+# Start the Launcher GUI
 python launcher.py
 ```
 
-- **Dashboard**: Start/stop bot, view logs
-- **Settings**: Edit config
-- **Accounts**: Manage Twitch/YouTube login
-- **Actions Editor**: Create custom commands and actions
-- **Profiles**: Switch between different configurations
+---
 
-### Headless (bot only, no GUI)
-```bash
-python main.py
-```
+## 🔐 Account Connection
+
+### Twitch Setup
+1. Go to **Accounts** → Click **"Login with Twitch"**.
+2. Follow the web authorization to grant bot permissions for chat, channel points, clips, and moderation commands.
+
+### YouTube Setup (Optional)
+1. Create a Google Cloud project and enable **YouTube Data API v3**.
+2. Download `client_secret.json` into the OpenStreamBot folder.
+3. In **Accounts** → Click **"Login with Google"**.
 
 ---
 
-## 🎮 OBS Studio Setup
+## 📝 Creating Actions & Queues
 
-1. **Start OBS** (version 28+ recommended)
-2. **Tools** → **WebSocket Server Settings**
-3. **Enable Server** (default port 4455)
-4. Optional: **Set password** (then add to `config.yaml`)
-5. Start bot → Connection established automatically
-
----
-
-## 📝 Create Actions
-
-The action system allows you to create custom commands and reactions:
-
-### Example: Sound Command
-1. Start launcher → **Actions Editor** tab
-2. Click **"+ New Action"**
-3. Name: `Fanfare`
-4. **"+ Add Trigger"** → `twitch_command` → `!fanfare`
-5. **"+ Add Sub-Action"** → `play_sound` → Select sound file
-6. **"Save Actions"**
-
-Now `!fanfare` in chat will play the sound! 🎺
-### New in 0.3.0 Beta:
-- **Instant HotSwitch**: Toggle actions on/off instantly without restarting.
-- **User Permissions**: Restrict commands to Mods, VIPs, Subs, etc.
-- **Channel Points Manager**: Manage Twitch Rewards directly in the bot.
-- **Twitch Redemptions**: Trigger actions when viewers redeem Channel Points.
-- **Timer Management**: Timers start/stop automatically with their actions.
-- **Action Cooldowns**: Set cooldowns for commands to prevent spam.
-- **YouTube Chat Trigger**: Specific trigger for YouTube chat commands.
-- **Window Resizing**: Minimum window size reduced for better fit.
-
-### More Possibilities:
-- **Switch OBS scene** on specific commands
-- **Send chat messages** as responses
-- **Delays** between actions
-- **Stop sounds** after X seconds
+1. Open the **Actions Editor** tab in the Launcher.
+2. Click **"+ New Action"** and select an Execution Queue (e.g. `TTS` or `Parallel`).
+3. Add **Triggers** (e.g. `twitch_command` `!hello` or `twitch_redemption`).
+4. Add **Sub-Actions** (e.g. `play_sound`, `elevenlabs_tts`, `twitch_disable_reward`, `obs_scene`).
+5. Open **`⚙ Queues`** to set delays between actions or pause specific queues.
+6. Click **"Save Actions"**.
 
 ---
 
-## 🌐 Web Dashboard
+## 🌐 Web Dashboard & Overlay
 
-Available after starting at:
+Access the built-in web dashboard at:
 ```
 http://localhost:8000/interface/dashboard.html
 ```
-
 Features:
-- Live chat view (Twitch + YouTube combined)
-- Send messages
-- Emote support
-- Badge display (Mod, VIP, Sub, etc.)
-
----
-
-## 📊 Project Structure
-
-```
-OpenStreamBot/
-├── launcher.py              # GUI Launcher
-├── main.py                  # Main program (headless)
-├── config.yaml              # Your configuration
-├── actions.yaml             # Saved actions
-├── requirements.txt         # Python dependencies
-├── YOUTUBE_SETUP_EN.md      # YouTube API Setup Guide
-│
-├── core/                    # Core modules
-│   ├── event_server.py      # WebSocket event system
-│   ├── action_engine.py     # Action execution
-│   └── http_server.py       # Web server for dashboard
-│
-├── platforms/               # Platform integrations
-│   ├── twitch_bot.py        # Twitch chat bot
-│   ├── youtube_bot.py       # YouTube live chat
-│   └── obs_controller.py    # OBS WebSocket client
-│
-└── interface/               # GUI & web interfaces
-    ├── gui_actions.py       # Actions editor (GUI)
-    ├── dashboard.html       # Web dashboard
-    └── dashboard.js         # Dashboard logic
-```
-
----
-
-## 🛠️ Troubleshooting
-
-### "Port 8000 / 8080 already in use"
-An old bot process is still running in the background:
-```bash
-pkill -f main.py
-```
-Or: Close launcher completely, wait briefly, restart.
-
-### YouTube: "Quota Exceeded"
-- **Cause**: Daily API limit reached (10,000 units)
-- **Solution**: 
-  - Use the **"Connect YouTube Stream"** button only when needed
-  - Quota resets daily around 9:00 AM CET
-  - See [`YOUTUBE_SETUP_EN.md`](YOUTUBE_SETUP_EN.md) for optimization tips
-
-### OBS not connecting
-- Check if **WebSocket Server** is enabled in OBS
-- Password correct in `config.yaml`?
-- OBS running on the same PC?
-
-### Sounds not playing
-- File format supported? (MP3, WAV, OGG)
-- File path correct? (Use absolute paths)
-- Check logs for error messages
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! 
-
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/MyFeature`
-3. Commit: `git commit -m 'Add: My new feature'`
-4. Push: `git push origin feature/MyFeature`
-5. Open pull request
+- Unified live chat (Twitch + YouTube) with badges & animated emotes.
+- OBS Browser Dock compatible overlay.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
-
----
-
-## 🐛 Bug Reports & Feature Requests
-
-Use [GitHub Issues](https://github.com/JanVanPommes/OpenStreamBot/issues) to:
-- Report bugs
-- Suggest features
-- Ask questions
-
----
-
-## 🙏 Credits
-
-- **TwitchIO**: Twitch chat integration
-- **Google APIs**: YouTube live chat
-- **obs-websocket-py**: OBS Studio control
-- **CustomTkinter**: Modern GUI
-- **Pygame**: Audio playback
-
----
-
-**Good luck with your stream! 🎬🚀**
+Distributed under the [MIT License](LICENSE).

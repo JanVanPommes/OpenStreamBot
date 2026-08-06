@@ -22,7 +22,7 @@
   "Name": "OpenStreamBot",
   "Icon": "images/pluginIcon",
   "URL": "https://github.com/JanVanPommes/OpenStreamBot",
-  "Version": "0.5.0",
+  "Version": "0.6.0",
   "SDKVersion": 2,
   "Software": {
     "MinimumVersion": "5.0"

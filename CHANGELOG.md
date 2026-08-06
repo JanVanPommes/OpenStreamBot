@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.0] - 2026-08-06
+### Added
+- **Multi-Queue Action Architecture**: Actions can now be assigned to specific queues (`Default`, `TTS`, `Overlays`, `SoundFX`, `Parallel`, etc.). Queues process actions sequentially with configurable delays, while `Parallel` actions run concurrently.
+- **Queue Manager & Live Monitor**: Added a dedicated Queue Manager dialog (`⚙ Queues` button) in the Action Editor to configure per-queue delays, pause/resume queues, and clear pending actions.
+- **Control Center Queue Overview**: Added a live Action Queue status card in the Launcher's Control Center directly above the Live Log with real-time state tracking.
+- **Modern GUI Configuration Screen**: Transformed the raw YAML text area into a structured card-based settings interface for Server, Twitch, YouTube, OBS WebSocket, and Audio configurations, with an optional Raw YAML Editor popup for advanced users.
+- **Full Backup System**: Export and import complete profiles with all referenced local assets (audio, scripts, images) into compressed `.osbbackup` archives for easy migration.
+- **Twitch Reward Sub-Actions**: New sub-actions `twitch_enable_reward` and `twitch_disable_reward` to dynamically pause/resume Twitch Channel Point rewards without deleting them, including reward selection dropdowns.
+- **Action Test Button**: Added a dedicated "▶ Testen" button in the Action Editor supporting remote WebSocket triggering with direct `ActionEngine` execution fallback.
+
+### Fixed
+- **Action Queue Overview Synchronization**: Implemented atomic file saving (`os.replace`) and absolute base path anchoring (`BASE_DIR` / `sys.frozen`) to ensure real-time queue states render accurately without flickering.
+- **Global Mousewheel Scrolling**: Standardized mousewheel scroll routing across all pages, modal dialogs, and sub-action cards.
+- **Twitch Rewards Smooth Scroll**: Calibrated mouse wheel scroll steps and suppressed event bubbling for smooth navigation through channel point rewards.
+- **Action Selection Performance**: Eliminated UI flickering when clicking between actions in the Action Editor by updating button styles in-place.
+
 ## [0.5.0] - 2026-05-06
 ### Added
 - **Stream Deck & OpenDeck Plugin**: Native support for Elgato Stream Deck and OpenDeck via a local `.sdPlugin`. Easily trigger OpenStreamBot actions by name using physical buttons.

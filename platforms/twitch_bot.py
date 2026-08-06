@@ -198,6 +198,48 @@ class TwitchBot(commands.Bot):
         except Exception as e:
             print(f"[Twitch Sync] Exception: {e}")
 
+    async def update_reward_state(self, reward_id, is_enabled):
+        """Aktiviert oder deaktiviert einen Twitch Reward"""
+        if not self.channel_id: return
+
+        try:
+            headers = {
+                "Client-Id": self._http.client_id,
+                "Authorization": f"Bearer {self._http.token.replace('oauth:', '')}",
+                "Content-Type": "application/json"
+            }
+            url = f"https://api.twitch.tv/helix/channel_points/custom_rewards?broadcaster_id={self.channel_id}&id={reward_id}"
+            
+            body = {
+                "is_enabled": is_enabled
+            }
+            
+            async with self._http.session.patch(url, headers=headers, json=body) as resp:
+                if resp.status == 200:
+                    state_str = "aktiviert" if is_enabled else "deaktiviert"
+                    print(f"[Twitch Sync] Reward {reward_id} wurde {state_str}.")
+                else:
+                    text = await resp.text()
+                    print(f"[Twitch Sync] Fehler {resp.status} beim Setzen des Status für Reward {reward_id}: {text}")
+        except Exception as e:
+            print(f"[Twitch Sync] Exception beim Setzen des Reward-Status: {e}")
+
+    async def set_reward_state_by_title(self, reward_title, is_enabled):
+        """Aktiviert oder deaktiviert einen Reward anhand seines Titels"""
+        rewards = await self.fetch_custom_rewards()
+        if not rewards:
+            print("[Twitch Sync] Keine Rewards vom Server geladen.")
+            return False
+            
+        title_to_id = {r['title'].lower(): r['id'] for r in rewards}
+        t_lower = reward_title.lower()
+        if t_lower in title_to_id:
+            await self.update_reward_state(title_to_id[t_lower], is_enabled)
+            return True
+        else:
+            print(f"[Twitch Sync] Reward '{reward_title}' nicht auf Twitch gefunden.")
+            return False
+
     async def sync_cooldowns(self, actions):
         """Synchronisiert die Cooldowns der Actions mit den Twitch Rewards"""
         print("[Twitch Sync] Starte Cooldown-Synchronisation...")
@@ -575,6 +617,14 @@ class TwitchBot(commands.Bot):
         # though keep existing boolean as primary source if available.
         # TwitchIO 'is_mod' is reliable.
 
+        # Check if message is from a shared chat in another channel
+        is_shared = False
+        if message.tags:
+            source_room = message.tags.get('source-room-id')
+            room_id = message.tags.get('room-id')
+            if source_room and source_room != room_id:
+                is_shared = True
+
         # Check if message is emote-only (all non-whitespace is covered by emotes)
         emote_only = False
         if emotes:
@@ -598,7 +648,8 @@ class TwitchBot(commands.Bot):
             "emotes": emotes,
             "badges": msg_badges,
             "is_first_message": author_name.lower() not in self.seen_users,
-            "emote_only": emote_only
+            "emote_only": emote_only,
+            "is_shared": is_shared
         }
 
         # 3. An alle WebSocket-Clients senden (Overlays empfangen das jetzt!)
@@ -638,7 +689,8 @@ class TwitchBot(commands.Bot):
                 "is_mod": is_mod,
                 "is_vip": is_vip,
                 "is_subscriber": is_subscriber,
-                "is_broadcaster": is_broadcaster
+                "is_broadcaster": is_broadcaster,
+                "is_shared": is_shared
             })
 
         # 6. TwitchIO Command System (Hardcoded commands)

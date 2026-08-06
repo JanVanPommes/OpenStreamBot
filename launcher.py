@@ -4,11 +4,12 @@ import threading
 import sys
 import yaml
 import os
+import json
 import signal
 import webbrowser
 import queue
 import time
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from interface.gui_actions import ActionEditorFrame
 from interface.gui_rewards import RewardEditorFrame
 from core.profile_manager import ProfileManager
@@ -25,6 +26,13 @@ def resource_path(relative_path):
 
     return os.path.join(base_path, relative_path)
 
+if getattr(sys, 'frozen', False):
+    BASE_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+QUEUE_STATUS_FILE = os.path.join(BASE_DIR, ".queue_status.json")
+
 # Erscheinungsbild setzen
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -32,7 +40,54 @@ ctk.set_default_color_theme("blue")
 CONFIG_FILE = "config.yaml"
 # Nutze nun den internen Webserver statt Datei-Pfad
 DASHBOARD_URL = "http://localhost:8000/interface/dashboard.html"
-VERSION = "0.5.0"
+VERSION = "0.6.0"
+
+def bind_universal_scroll(scrollable_frame):
+    """Recursively binds mouse wheel scroll events to a CTkScrollableFrame,
+    its canvas, its inner frame, and all current child widgets."""
+    if not scrollable_frame:
+        return
+
+    canvas = getattr(scrollable_frame, '_parent_canvas', None)
+    if not canvas:
+        return
+
+    def _on_mouse_wheel(event):
+        units = 0
+        if hasattr(event, 'num') and event.num == 4:
+            units = -1
+        elif hasattr(event, 'num') and event.num == 5:
+            units = 1
+        elif hasattr(event, 'delta') and event.delta:
+            units = int(-1 * (event.delta / 120))
+            if units == 0:
+                units = -1 if event.delta > 0 else 1
+
+        if units != 0:
+            try:
+                canvas.yview_scroll(units, "units")
+            except Exception:
+                pass
+
+    def _bind_recursive(w):
+        try:
+            w.bind("<MouseWheel>", _on_mouse_wheel, add="+")
+            w.bind("<Button-4>", _on_mouse_wheel, add="+")
+            w.bind("<Button-5>", _on_mouse_wheel, add="+")
+        except Exception:
+            pass
+        try:
+            for child in w.winfo_children():
+                _bind_recursive(child)
+        except Exception:
+            pass
+
+    _bind_recursive(scrollable_frame)
+    if canvas:
+        _bind_recursive(canvas)
+    parent_frame = getattr(scrollable_frame, '_parent_frame', None)
+    if parent_frame:
+        _bind_recursive(parent_frame)
 
 class ConsoleRedirector:
     def __init__(self, text_widget, queue):
@@ -137,6 +192,9 @@ class App(ctk.CTk):
         self.status_thread = threading.Thread(target=self.status_monitor, daemon=True)
         self.status_thread.start()
 
+        # Start periodic queue overview update loop
+        self.update_queue_overview_loop()
+
         # --- Frames ---
         self.dashboard_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.settings_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
@@ -237,16 +295,30 @@ StartupNotify=true
         self.yt_connect_btn.pack(side="left", padx=20, pady=20, expand=True)
         self.yt_connect_btn.configure(state="disabled")
 
-        # Console Output Card
+        # Action Queue Overview Card (Above Live Log)
+        self.queue_overview_frame = ctk.CTkFrame(self.dashboard_frame, fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), corner_radius=10)
+        self.queue_overview_frame.grid(row=2, column=0, padx=20, pady=(5, 10), sticky="ew")
+
+        q_head = ctk.CTkFrame(self.queue_overview_frame, fg_color="transparent")
+        q_head.pack(fill="x", padx=15, pady=(10, 2))
+        
+        ctk.CTkLabel(q_head, text="⚡ Action Queue Status", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
+        self.lbl_queue_summary = ctk.CTkLabel(q_head, text="System Status: Idle", font=ctk.CTkFont(size=11), text_color="gray70")
+        self.lbl_queue_summary.pack(side="right")
+
+        self.queue_chips_frame = ctk.CTkFrame(self.queue_overview_frame, fg_color="transparent")
+        self.queue_chips_frame.pack(fill="x", padx=15, pady=(0, 10))
+
+        # Console Output Card (Row 3)
         self.console_frame = ctk.CTkFrame(self.dashboard_frame, fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), corner_radius=10)
-        self.console_frame.grid(row=2, column=0, padx=20, pady=10, sticky="nsew")
+        self.console_frame.grid(row=3, column=0, padx=20, pady=10, sticky="nsew")
         self.console_frame.grid_columnconfigure(0, weight=1)
         self.console_frame.grid_rowconfigure(1, weight=1)
 
         self.console_label = ctk.CTkLabel(self.console_frame, text="Live Log Output", font=ctk.CTkFont(weight="bold"), anchor="w")
         self.console_label.grid(row=0, column=0, padx=15, pady=(15, 5), sticky="w")
 
-        self.log_textbox = ctk.CTkTextbox(self.console_frame, width=600, height=300, fg_color=("gray90", "gray10"), corner_radius=5)
+        self.log_textbox = ctk.CTkTextbox(self.console_frame, width=600, height=260, fg_color=("gray90", "gray10"), corner_radius=5)
         self.log_textbox.grid(row=1, column=0, padx=15, pady=(0, 15), sticky="nsew")
         
         # Configure Tags for ANSI Colors
@@ -261,29 +333,219 @@ StartupNotify=true
         except:
              pass
 
-        self.dashboard_frame.grid_rowconfigure(2, weight=1)
+        self.dashboard_frame.grid_rowconfigure(3, weight=1)
         self.dashboard_frame.grid_columnconfigure(0, weight=1)
 
+    def update_queue_overview_loop(self):
+        try:
+            self.refresh_queue_overview()
+        except Exception:
+            pass
+        self.after(1500, self.update_queue_overview_loop)
+
+    def refresh_queue_overview(self):
+        if not hasattr(self, 'queue_chips_frame'):
+            return
+
+        if not hasattr(self, '_queue_chip_widgets'):
+            self._queue_chip_widgets = {}
+        if not hasattr(self, '_last_valid_statuses'):
+            self._last_valid_statuses = None
+
+        statuses = None
+        # 1. Read persisted queue status snapshot from disk (works when bot runs in subprocess)
+        status_file = QUEUE_STATUS_FILE
+        if not os.path.exists(status_file):
+            alt_path = os.path.join(os.getcwd(), ".queue_status.json")
+            if os.path.exists(alt_path):
+                status_file = alt_path
+
+        if os.path.exists(status_file):
+            try:
+                with open(status_file, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    if content:
+                        statuses = json.loads(content)
+                        self._last_valid_statuses = statuses
+            except Exception as e:
+                print(f"[Launcher] Error reading status from {status_file}: {e}")
+        else:
+            print(f"[Launcher Queue Debug] Status file not found at: {status_file} (CWD: {os.getcwd()})")
+
+        if not statuses and self._last_valid_statuses:
+            statuses = self._last_valid_statuses
+
+        # 2. Fallback to in-process ActionEngine instance
+        if not statuses:
+            engine = getattr(self, 'action_engine', None)
+            if not engine and hasattr(self, 'actions_frame'):
+                engine = getattr(self.actions_frame, 'action_engine', None)
+            if engine:
+                statuses = engine.get_all_queues_status()
+                self._last_valid_statuses = statuses
+
+        # 3. Default fallback
+        if not statuses:
+            statuses = {
+                "Default": {"name": "Default", "pending": 0, "status": "Idle", "paused": False, "last_action": None},
+                "TTS": {"name": "TTS", "pending": 0, "status": "Idle", "paused": False, "last_action": None},
+                "Overlays": {"name": "Overlays", "pending": 0, "status": "Idle", "paused": False, "last_action": None},
+                "SoundFX": {"name": "SoundFX", "pending": 0, "status": "Idle", "paused": False, "last_action": None},
+            }
+
+        total_pending = sum(s.get("pending", 0) for s in statuses.values())
+        any_running = any(s.get("status") == "Running" for s in statuses.values())
+        
+        if any_running:
+            self.lbl_queue_summary.configure(text=f"⚡ Active Execution | Pending: {total_pending}", text_color="#10B981")
+        elif total_pending > 0:
+            self.lbl_queue_summary.configure(text=f"⏳ Queued: {total_pending}", text_color="#F59E0B")
+        else:
+            self.lbl_queue_summary.configure(text="System Status: Idle", text_color="gray70")
+
+        # Clean up chips for removed queues
+        existing_keys = set(self._queue_chip_widgets.keys())
+        current_keys = set(statuses.keys())
+        for removed_key in (existing_keys - current_keys):
+            chip, _ = self._queue_chip_widgets.pop(removed_key)
+            chip.destroy()
+
+        for q_name, data in statuses.items():
+            st = data.get("status", "Idle")
+            pending = data.get("pending", 0)
+            paused = data.get("paused", False)
+            last = data.get("last_action")
+            
+            if paused:
+                badge_bg = "#B45309"
+                badge_txt = f"{q_name}: ⏸ Paused"
+            elif st == "Running":
+                badge_bg = "#047857"
+                cur = data.get("current_action", "")
+                badge_txt = f"{q_name}: ▶ '{cur}'" + (f" (+{pending})" if pending > 0 else "")
+            elif pending > 0:
+                badge_bg = "#1D4ED8"
+                badge_txt = f"{q_name}: ⏳ {pending} pending"
+            else:
+                badge_bg = ("gray75", "#262626")
+                if last:
+                    badge_txt = f"{q_name}: Idle (Zuletzt: '{last}')"
+                else:
+                    badge_txt = f"{q_name}: Idle"
+
+            text_col = "white" if badge_bg != ("gray75", "#262626") else ("gray10", "gray80")
+
+            if q_name not in self._queue_chip_widgets:
+                chip = ctk.CTkFrame(self.queue_chips_frame, fg_color=badge_bg, corner_radius=6)
+                chip.pack(side="left", padx=4, pady=2)
+                lbl = ctk.CTkLabel(chip, text=badge_txt, font=ctk.CTkFont(size=11, weight="bold"), text_color=text_col)
+                lbl.pack(padx=8, pady=3)
+                self._queue_chip_widgets[q_name] = (chip, lbl)
+            else:
+                chip, lbl = self._queue_chip_widgets[q_name]
+                chip.configure(fg_color=badge_bg)
+                lbl.configure(text=badge_txt, text_color=text_col)
+
+    # --- STRUCTURED SETTINGS SCREEN ---
     def setup_settings_frame(self):
         self.settings_label = ctk.CTkLabel(self.settings_frame, text="Configuration", font=ctk.CTkFont(size=24, weight="bold"))
-        self.settings_label.grid(row=0, column=0, padx=20, pady=20, sticky="w")
+        self.settings_label.grid(row=0, column=0, padx=20, pady=(20, 2), sticky="w")
 
-        self.config_content = ctk.CTkTextbox(self.settings_frame, width=600, height=400, fg_color=("gray90", "gray10"), corner_radius=10)
-        self.config_content.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
-        
-        self.settings_frame.grid_rowconfigure(1, weight=1)
+        ctk.CTkLabel(self.settings_frame, text="Passe die Einstellungen für Twitch, YouTube, OBS und Audio an.", text_color="gray70").grid(row=1, column=0, padx=20, pady=(0, 10), sticky="w")
+
+        self.settings_scroll = ctk.CTkScrollableFrame(self.settings_frame, fg_color="transparent")
+        self.settings_scroll.grid(row=2, column=0, padx=20, pady=5, sticky="nsew")
+
+        self.settings_frame.grid_rowconfigure(2, weight=1)
         self.settings_frame.grid_columnconfigure(0, weight=1)
 
-        self.settings_btn_frame = ctk.CTkFrame(self.settings_frame, fg_color="transparent")
-        self.settings_btn_frame.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
+        # Variables mapping to config.yaml
+        self.cfg_vars = {
+            "server_host": ctk.StringVar(value="localhost"),
+            "server_port": ctk.StringVar(value="8080"),
 
-        self.load_btn = ctk.CTkButton(self.settings_btn_frame, text="Reload Config", command=self.load_config_to_ui, fg_color="#6B7280", hover_color="#4B5563")
-        self.load_btn.pack(side="right", padx=10)
-        
-        self.save_btn = ctk.CTkButton(self.settings_btn_frame, text="Save Config", command=self.save_config_from_ui, fg_color="#10B981", hover_color="#059669")
-        self.save_btn.pack(side="right", padx=10)
-        
+            "twitch_enabled": ctk.BooleanVar(value=True),
+            "twitch_channel": ctk.StringVar(value=""),
+            "twitch_client_id": ctk.StringVar(value=""),
+            "twitch_client_secret": ctk.StringVar(value=""),
+            "twitch_redirect_uri": ctk.StringVar(value="http://localhost:8080"),
+
+            "youtube_enabled": ctk.BooleanVar(value=True),
+            "youtube_client_secret_file": ctk.StringVar(value="client_secret.json"),
+            "youtube_token_file": ctk.StringVar(value="token_youtube.json"),
+
+            "obs_enabled": ctk.BooleanVar(value=True),
+            "obs_host": ctk.StringVar(value="localhost"),
+            "obs_port": ctk.StringVar(value="4455"),
+            "obs_password": ctk.StringVar(value=""),
+
+            "vol_sfx": ctk.StringVar(value="1.0"),
+            "vol_playlist": ctk.StringVar(value="0.5"),
+        }
+
+        # Card 1: Server
+        self._build_settings_card(self.settings_scroll, "🌐 Server Settings", [
+            ("Server Host:", self.cfg_vars["server_host"], "localhost"),
+            ("Server Port:", self.cfg_vars["server_port"], "8080"),
+        ])
+
+        # Card 2: Twitch
+        card_tw = self._create_card_frame(self.settings_scroll, "💜 Twitch Configuration")
+        ctk.CTkSwitch(card_tw, text="Twitch Bot aktivieren", variable=self.cfg_vars["twitch_enabled"]).pack(anchor="w", padx=15, pady=(5, 10))
+        self._add_field_row(card_tw, "Kanal Name:", self.cfg_vars["twitch_channel"], "Dein Twitch Username")
+        self._add_field_row(card_tw, "Client ID:", self.cfg_vars["twitch_client_id"], "Twitch Developer App Client ID")
+        self._add_field_row(card_tw, "Client Secret:", self.cfg_vars["twitch_client_secret"], "Twitch App Client Secret", show="*")
+        self._add_field_row(card_tw, "Redirect URI:", self.cfg_vars["twitch_redirect_uri"], "http://localhost:8080")
+
+        # Card 3: YouTube
+        card_yt = self._create_card_frame(self.settings_scroll, "🔴 YouTube Configuration")
+        ctk.CTkSwitch(card_yt, text="YouTube Bot aktivieren", variable=self.cfg_vars["youtube_enabled"]).pack(anchor="w", padx=15, pady=(5, 10))
+        self._add_field_row(card_yt, "Client Secret File:", self.cfg_vars["youtube_client_secret_file"], "client_secret.json")
+        self._add_field_row(card_yt, "Token File:", self.cfg_vars["youtube_token_file"], "token_youtube.json")
+
+        # Card 4: OBS WebSocket
+        card_obs = self._create_card_frame(self.settings_scroll, "🎥 OBS Studio WebSocket Integration")
+        ctk.CTkSwitch(card_obs, text="OBS Integration aktivieren", variable=self.cfg_vars["obs_enabled"]).pack(anchor="w", padx=15, pady=(5, 10))
+        self._add_field_row(card_obs, "OBS Host:", self.cfg_vars["obs_host"], "localhost")
+        self._add_field_row(card_obs, "OBS Port:", self.cfg_vars["obs_port"], "4455")
+        self._add_field_row(card_obs, "Passwort:", self.cfg_vars["obs_password"], "OBS WebSocket Passwort", show="*")
+
+        # Card 5: Audio
+        self._build_settings_card(self.settings_scroll, "🔊 Audio & Lautstärke", [
+            ("SFX Lautstärke (0.0-1.0):", self.cfg_vars["vol_sfx"], "1.0"),
+            ("Playlist Lautstärke (0.0-1.0):", self.cfg_vars["vol_playlist"], "0.5"),
+        ])
+
+        # Bottom Actions Bar
+        self.settings_btn_frame = ctk.CTkFrame(self.settings_frame, fg_color="transparent")
+        self.settings_btn_frame.grid(row=3, column=0, padx=20, pady=15, sticky="ew")
+
+        ctk.CTkButton(self.settings_btn_frame, text="💾 Speichern", command=self.save_config_from_ui, fg_color="#10B981", hover_color="#059669", height=36, font=ctk.CTkFont(weight="bold")).pack(side="right", padx=5)
+        ctk.CTkButton(self.settings_btn_frame, text="🔄 Neuladen", command=self.load_config_to_ui, fg_color="#6B7280", hover_color="#4B5563", height=36).pack(side="right", padx=5)
+        ctk.CTkButton(self.settings_btn_frame, text="📝 Editor (Raw YAML)", command=self.open_raw_yaml_editor, fg_color="#3B82F6", hover_color="#2563EB", height=36).pack(side="left", padx=5)
+
         self.load_config_to_ui()
+        bind_universal_scroll(self.settings_scroll)
+
+    def _create_card_frame(self, parent, title):
+        card = ctk.CTkFrame(parent, fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), corner_radius=10)
+        card.pack(fill="x", pady=8, padx=5)
+        ctk.CTkLabel(card, text=title, font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", padx=15, pady=(12, 6))
+        return card
+
+    def _add_field_row(self, card, label_text, string_var, placeholder="", show=None):
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=15, pady=4)
+        ctk.CTkLabel(row, text=label_text, width=160, anchor="w").pack(side="left")
+        kwargs = {"textvariable": string_var, "placeholder_text": placeholder}
+        if show: kwargs["show"] = show
+        entry = ctk.CTkEntry(row, **kwargs)
+        entry.pack(side="left", fill="x", expand=True)
+
+    def _build_settings_card(self, parent, title, fields):
+        card = self._create_card_frame(parent, title)
+        for lbl, var, ph in fields:
+            self._add_field_row(card, lbl, var, ph)
 
     # --- ACCOUNTS FRAME ---
     def setup_accounts_frame(self):
@@ -540,6 +802,15 @@ StartupNotify=true
         
         self.btn_del_prof = ctk.CTkButton(self.prof_controls, text="Delete Selected Profile", fg_color="#EF4444", hover_color="#DC2626", command=self.delete_selected_profile)
         self.btn_del_prof.pack(pady=10, fill="x")
+
+        # Full Backup System Section
+        ctk.CTkLabel(self.prof_controls, text="Full Backup System (.osbbackup):", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(15, 5))
+
+        self.btn_export_backup = ctk.CTkButton(self.prof_controls, text="📦 Export Full Backup", fg_color="#8B5CF6", hover_color="#7C3AED", command=self.export_full_backup)
+        self.btn_export_backup.pack(pady=5, fill="x")
+
+        self.btn_import_backup = ctk.CTkButton(self.prof_controls, text="📥 Import Full Backup Archive", fg_color="#6366F1", hover_color="#4F46E5", command=self.import_full_backup)
+        self.btn_import_backup.pack(pady=5, fill="x")
         
         self.selected_profile_btn = None
         self.selected_profile_name = None
@@ -552,6 +823,7 @@ StartupNotify=true
             btn = ctk.CTkButton(self.prof_listbox, text=p, command=lambda n=p: self.select_profile(n),
                                 fg_color="transparent", border_width=1, text_color=("gray10", "gray90"))
             btn.pack(fill="x", pady=2)
+        bind_universal_scroll(self.prof_listbox)
             
     def select_profile(self, name):
         self.selected_profile_name = name
@@ -570,6 +842,44 @@ StartupNotify=true
         self.profile_manager.save_profile(name)
         messagebox.showinfo("Success", f"Profile '{name}' saved.")
         self.refresh_profile_list()
+
+    def export_full_backup(self):
+        from tkinter import filedialog
+        prof_name = self.selected_profile_name or self.entry_profile.get() or "Default"
+        filepath = filedialog.asksaveasfilename(
+            title="Export Full Profile Backup",
+            defaultextension=".osbbackup",
+            filetypes=[("OpenStreamBot Backup", "*.osbbackup"), ("Zip Archives", "*.zip")],
+            initialfile=f"backup_{prof_name}.osbbackup"
+        )
+        if not filepath:
+            return
+        
+        try:
+            from core.backup_manager import BackupManager
+            bm = BackupManager()
+            out_file = bm.export_backup(profile_name=prof_name, export_filepath=filepath)
+            messagebox.showinfo("Export Successful", f"Full backup successfully exported to:\n{out_file}")
+        except Exception as e:
+            messagebox.showerror("Export Failed", f"Failed to export backup: {e}")
+
+    def import_full_backup(self):
+        from tkinter import filedialog
+        filepath = filedialog.askopenfilename(
+            title="Import Full Profile Backup",
+            filetypes=[("OpenStreamBot Backup", "*.osbbackup"), ("Zip Archives", "*.zip"), ("All Files", "*.*")]
+        )
+        if not filepath:
+            return
+            
+        try:
+            from core.backup_manager import BackupManager
+            bm = BackupManager()
+            imported_name = bm.import_backup(filepath)
+            self.refresh_profile_list()
+            messagebox.showinfo("Import Successful", f"Full backup imported successfully as profile '{imported_name}'!")
+        except Exception as e:
+            messagebox.showerror("Import Failed", f"Failed to import backup: {e}")
 
     def save_to_selected_profile(self):
         if not self.selected_profile_name: return
@@ -608,24 +918,128 @@ StartupNotify=true
             except Exception as e:
                 messagebox.showerror("Error", str(e))
     def load_config_to_ui(self):
+        if not hasattr(self, 'cfg_vars'):
+            return
+
+        cfg = {}
         try:
-            with open(CONFIG_FILE, "r") as f:
-                content = f.read()
-                self.config_content.delete("0.0", "end")
-                self.config_content.insert("0.0", content)
-        except FileNotFoundError:
-            self.config_content.insert("0.0", "# Config file not found!\n# Please create config.yaml")
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, "r") as f:
+                    cfg = yaml.safe_load(f) or {}
+        except Exception as e:
+            print(f"[Launcher] Error reading config.yaml: {e}")
+
+        # Populate GUI Variables
+        srv = cfg.get("server", {})
+        self.cfg_vars["server_host"].set(str(srv.get("host", "localhost")))
+        self.cfg_vars["server_port"].set(str(srv.get("port", 8080)))
+
+        tw = cfg.get("twitch", {})
+        self.cfg_vars["twitch_enabled"].set(bool(tw.get("enabled", True)))
+        self.cfg_vars["twitch_channel"].set(str(tw.get("channel", "")))
+        self.cfg_vars["twitch_client_id"].set(str(tw.get("client_id", "")))
+        self.cfg_vars["twitch_client_secret"].set(str(tw.get("client_secret", "")))
+        self.cfg_vars["twitch_redirect_uri"].set(str(tw.get("redirect_uri", "http://localhost:8080")))
+
+        yt = cfg.get("youtube", {})
+        self.cfg_vars["youtube_enabled"].set(bool(yt.get("enabled", True)))
+        self.cfg_vars["youtube_client_secret_file"].set(str(yt.get("client_secret_file", "client_secret.json")))
+        self.cfg_vars["youtube_token_file"].set(str(yt.get("token_file", "token_youtube.json")))
+
+        obs = cfg.get("obs", {})
+        self.cfg_vars["obs_enabled"].set(bool(obs.get("enabled", True)))
+        self.cfg_vars["obs_host"].set(str(obs.get("host", "localhost")))
+        self.cfg_vars["obs_port"].set(str(obs.get("port", 4455)))
+        self.cfg_vars["obs_password"].set(str(obs.get("password", "")))
+
+        vol = cfg.get("audio", {})
+        self.cfg_vars["vol_sfx"].set(str(vol.get("sfx", 1.0)))
+        self.cfg_vars["vol_playlist"].set(str(vol.get("playlist", 0.5)))
 
     def save_config_from_ui(self):
-        content = self.config_content.get("0.0", "end")
+        if not hasattr(self, 'cfg_vars'):
+            return
+
+        cfg = {}
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r") as f:
+                    cfg = yaml.safe_load(f) or {}
+            except Exception:
+                cfg = {}
+
+        if "server" not in cfg or not isinstance(cfg["server"], dict): cfg["server"] = {}
+        cfg["server"]["host"] = self.cfg_vars["server_host"].get().strip()
+        try: cfg["server"]["port"] = int(self.cfg_vars["server_port"].get().strip() or 8080)
+        except: cfg["server"]["port"] = 8080
+
+        if "twitch" not in cfg or not isinstance(cfg["twitch"], dict): cfg["twitch"] = {}
+        cfg["twitch"]["enabled"] = self.cfg_vars["twitch_enabled"].get()
+        cfg["twitch"]["channel"] = self.cfg_vars["twitch_channel"].get().strip()
+        cfg["twitch"]["client_id"] = self.cfg_vars["twitch_client_id"].get().strip()
+        cfg["twitch"]["client_secret"] = self.cfg_vars["twitch_client_secret"].get().strip()
+        cfg["twitch"]["redirect_uri"] = self.cfg_vars["twitch_redirect_uri"].get().strip() or "http://localhost:8080"
+
+        if "youtube" not in cfg or not isinstance(cfg["youtube"], dict): cfg["youtube"] = {}
+        cfg["youtube"]["enabled"] = self.cfg_vars["youtube_enabled"].get()
+        cfg["youtube"]["client_secret_file"] = self.cfg_vars["youtube_client_secret_file"].get().strip() or "client_secret.json"
+        cfg["youtube"]["token_file"] = self.cfg_vars["youtube_token_file"].get().strip() or "token_youtube.json"
+
+        if "obs" not in cfg or not isinstance(cfg["obs"], dict): cfg["obs"] = {}
+        cfg["obs"]["enabled"] = self.cfg_vars["obs_enabled"].get()
+        cfg["obs"]["host"] = self.cfg_vars["obs_host"].get().strip() or "localhost"
+        try: cfg["obs"]["port"] = int(self.cfg_vars["obs_port"].get().strip() or 4455)
+        except: cfg["obs"]["port"] = 4455
+        cfg["obs"]["password"] = self.cfg_vars["obs_password"].get().strip()
+
+        if "audio" not in cfg or not isinstance(cfg["audio"], dict): cfg["audio"] = {}
+        try: cfg["audio"]["sfx"] = float(self.cfg_vars["vol_sfx"].get().strip() or 1.0)
+        except: cfg["audio"]["sfx"] = 1.0
+        try: cfg["audio"]["playlist"] = float(self.cfg_vars["vol_playlist"].get().strip() or 0.5)
+        except: cfg["audio"]["playlist"] = 0.5
+
         try:
-            # Validate YAML
-            yaml.safe_load(content)
             with open(CONFIG_FILE, "w") as f:
-                f.write(content)
-            messagebox.showinfo("Success", "Configuration saved!")
-        except yaml.YAMLError as e:
-            messagebox.showerror("Error", f"Invalid YAML format:\n{e}")
+                yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+            messagebox.showinfo("Erfolg", "Konfiguration erfolgreich gespeichert!")
+        except Exception as e:
+            messagebox.showerror("Fehler", f"Fehler beim Speichern der Konfiguration:\n{e}")
+
+    def open_raw_yaml_editor(self):
+        """Opens a raw YAML text editor modal for power users."""
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("Raw YAML Config Editor")
+        dlg.geometry("700x500")
+
+        ctk.CTkLabel(dlg, text="Raw config.yaml Editor", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=10)
+
+        txt = ctk.CTkTextbox(dlg, width=650, height=380, fg_color=("gray90", "gray10"))
+        txt.pack(fill="both", expand=True, padx=15, pady=10)
+
+        try:
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, "r") as f:
+                    txt.insert("0.0", f.read())
+        except Exception as e:
+            txt.insert("0.0", f"# Error reading config: {e}")
+
+        btn_bar = ctk.CTkFrame(dlg, fg_color="transparent")
+        btn_bar.pack(fill="x", padx=15, pady=10)
+
+        def save_raw():
+            raw_val = txt.get("0.0", "end")
+            try:
+                yaml.safe_load(raw_val)
+                with open(CONFIG_FILE, "w") as f:
+                    f.write(raw_val)
+                self.load_config_to_ui()
+                dlg.destroy()
+                messagebox.showinfo("Erfolg", "Raw YAML Konfiguration gespeichert!")
+            except yaml.YAMLError as ye:
+                messagebox.showerror("YAML Fehler", f"Ungültiges YAML Format:\n{ye}")
+
+        ctk.CTkButton(btn_bar, text="Speichern & Schließen", command=save_raw, fg_color="#10B981", hover_color="#059669").pack(side="right", padx=5)
+        ctk.CTkButton(btn_bar, text="Abbrechen", command=dlg.destroy, fg_color="#6B7280", hover_color="#4B5563").pack(side="right", padx=5)
 
     def toggle_bot(self):
         if self.bot_process is None:
