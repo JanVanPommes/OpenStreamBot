@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.2] - 2026-08-08
+### Fixed
+- **Cross-Platform Full Backup & Asset Auto-Mapping**: Resolved an issue where full profile backups imported across different operating systems (e.g. Linux to Windows) retained absolute original OS file paths (e.g. `/mnt/...`), rendering media unreachable.
+- **Automated Path Rewriting**: `BackupManager` now automatically normalizes archive asset locations under `assets/media/` upon export, extracts them safely to local storage on import, and dynamically rewrites all referenced file and folder paths in `actions.yaml` and `config.yaml` to valid local paths on the target OS.
+- **Manifest Path Remapping & Fallbacks**: Added explicit `path_mappings` in `manifest.json` and heuristic asset matching to guarantee smooth migration for both new and legacy `.osbbackup` archives.
+
 ## [0.6.1] - 2026-08-08
 ### Fixed
 - **Web Dashboard 404 Error (Windows)**: Resolved a 404 Not Found error when opening `http://localhost:8000/interface/dashboard.html` on Windows by implementing dynamic root directory discovery in `SimpleWebServer` (checking `os.getcwd()`, PyInstaller `_MEIPASS`, executable location, and package root) and adding the `interface/` directory to the release build script (`build.py`).

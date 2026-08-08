@@ -40,7 +40,7 @@ ctk.set_default_color_theme("blue")
 CONFIG_FILE = "config.yaml"
 # Nutze nun den internen Webserver statt Datei-Pfad
 DASHBOARD_URL = "http://localhost:8000/interface/dashboard.html"
-VERSION = "0.6.1"
+VERSION = "0.6.2"
 
 def bind_universal_scroll(scrollable_frame):
     """Recursively binds mouse wheel scroll events to a CTkScrollableFrame,
@@ -877,7 +877,7 @@ StartupNotify=true
             bm = BackupManager()
             imported_name = bm.import_backup(filepath)
             self.refresh_profile_list()
-            messagebox.showinfo("Import Successful", f"Full backup imported successfully as profile '{imported_name}'!")
+            messagebox.showinfo("Import Successful", f"Full backup imported successfully as profile '{imported_name}'!\n\nAll media assets have been restored into the local 'assets/' folder, and file paths in the profile have been automatically converted for your system.\n\nSelect '{imported_name}' in the profile list and click 'Load Selected Profile' to activate it.")
         except Exception as e:
             messagebox.showerror("Import Failed", f"Failed to import backup: {e}")
 

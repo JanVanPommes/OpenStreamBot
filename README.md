@@ -1,6 +1,6 @@
 # OpenStreamBot
 
-**Version:** 0.6.1  
+**Version:** 0.6.2  
 **Author:** JanVanPommes  
 **A Multi-Platform Stream Bot for Twitch & YouTube**
 
