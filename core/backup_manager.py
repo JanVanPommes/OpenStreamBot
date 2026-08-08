@@ -74,7 +74,7 @@ class BackupManager:
         referenced_files = self.scan_referenced_files(act_path, cfg_path)
 
         manifest = {
-            "version": "0.6.0",
+            "version": "0.6.1",
             "created_at": datetime.now().isoformat(),
             "profile_name": profile_name,
             "assets": []

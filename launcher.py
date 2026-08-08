@@ -40,7 +40,7 @@ ctk.set_default_color_theme("blue")
 CONFIG_FILE = "config.yaml"
 # Nutze nun den internen Webserver statt Datei-Pfad
 DASHBOARD_URL = "http://localhost:8000/interface/dashboard.html"
-VERSION = "0.6.0"
+VERSION = "0.6.1"
 
 def bind_universal_scroll(scrollable_frame):
     """Recursively binds mouse wheel scroll events to a CTkScrollableFrame,
@@ -1205,6 +1205,8 @@ StartupNotify=true
         self.after(100, self.update_logs)
 
     def open_web_dashboard(self):
+        if self.bot_process is None:
+            messagebox.showinfo("Web Dashboard", "Hinweis: Der Bot ist aktuell offline.\nBitte starte den Bot über den Button 'Start Bot', damit der lokale Webserver aktiv ist und das Web Dashboard geladen werden kann.")
         # Open URL directly
         webbrowser.open(DASHBOARD_URL)
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.1] - 2026-08-08
+### Fixed
+- **Web Dashboard 404 Error (Windows)**: Resolved a 404 Not Found error when opening `http://localhost:8000/interface/dashboard.html` on Windows by implementing dynamic root directory discovery in `SimpleWebServer` (checking `os.getcwd()`, PyInstaller `_MEIPASS`, executable location, and package root) and adding the `interface/` directory to the release build script (`build.py`).
+- **Dashboard Offline Warning**: Added an informative user dialog in the Launcher when attempting to open the Web Dashboard while the bot is offline.
+
 ## [0.6.0] - 2026-08-06
 ### Added
 - **Multi-Queue Action Architecture**: Actions can now be assigned to specific queues (`Default`, `TTS`, `Overlays`, `SoundFX`, `Parallel`, etc.). Queues process actions sequentially with configurable delays, while `Parallel` actions run concurrently.

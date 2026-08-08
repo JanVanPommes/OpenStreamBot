@@ -91,9 +91,11 @@ def prepare_dist_folder():
         if os.path.exists(f):
             shutil.copy(f, dist_dir)
     
-    # 4. Copy Assets (Needed by bot_internal sometimes even if packed, or for user customization)
+    # 4. Copy Assets and Interface (Needed by bot_internal and browser dashboard/overlays)
     if os.path.exists("assets"):
          shutil.copytree("assets", os.path.join(dist_dir, "assets"))
+    if os.path.exists("interface"):
+         shutil.copytree("interface", os.path.join(dist_dir, "interface"))
 
     print(f"[Build] Distribution assembled at {dist_dir}")
     return dist_dir
