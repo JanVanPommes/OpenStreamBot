@@ -43,7 +43,9 @@ def build_launcher():
         f'"{sys.executable}" -m PyInstaller', '--noconfirm', '--onefile', '--clean', '--windowed', '--name "OpenStreamBot"',
         '--add-data "assets:assets"',
         '--add-data "interface:interface"',
-        '--add-data "core:core"' # Launcher imports core.profile_manager etc.
+        '--add-data "core:core"', # Launcher imports core.profile_manager etc.
+        '--hidden-import "packaging"',
+        '--hidden-import "packaging.version"'
     ]
     
     if os.path.exists("assets/logo.ico"):

@@ -759,9 +759,31 @@ class TwitchBot(commands.Bot):
            
         elif msg_id == 'raid':
             raider = tags.get('msg-param-displayName', 'Jemand')
-            viewers = tags.get('msg-param-viewerCount', '0')
+            login = tags.get('msg-param-login', raider)
+            viewers_raw = tags.get('msg-param-viewerCount', '0')
+            try:
+                viewers = int(viewers_raw)
+            except (ValueError, TypeError):
+                viewers = 0
+
+            # Try to fetch last game / category for the raiding streamer
+            game = "Unbekannt"
+            try:
+                game = await self.get_user_last_game(login)
+            except Exception as e:
+                print(f"[Twitch API] Error fetching raid game for {login}: {e}")
+            if not game or game.startswith("Unbekannt"):
+                game = "Unbekannt"
+
             event_text = f"RUN! {raider} raidet mit {viewers} Zuschauern!"
-            data = {"type": "raid", "message": event_text}
+            data = {
+                "type": "raid",
+                "message": event_text,
+                "user": raider,
+                "game": game,
+                "viewers": viewers
+            }
+            print(f"[Twitch Event] Raid from {raider} ({login}) with {viewers} viewers, game: '{game}'")
             await self.event_server.broadcast("SystemEvent", data)
 
         elif msg_id == 'viewermilestone':
@@ -805,7 +827,21 @@ class TwitchBot(commands.Bot):
             return
 
         print(f"[Command] !testraid triggered by {ctx.author.name}")
-        data = {"type": "raid", "message": f"RUN! {ctx.author.name} raidet mit 9000 Zuschauern! (Test)"}
+        game = "Just Chatting"
+        try:
+            fetched_game = await self.get_user_last_game(ctx.author.name)
+            if fetched_game and not fetched_game.startswith("Unbekannt"):
+                game = fetched_game
+        except Exception:
+            pass
+
+        data = {
+            "type": "raid",
+            "message": f"RUN! {ctx.author.name} raidet mit 9000 Zuschauern! (Test)",
+            "user": ctx.author.name,
+            "game": game,
+            "viewers": 9000
+        }
         await self.event_server.broadcast("SystemEvent", data)
 
     @commands.command()

@@ -23,3 +23,7 @@ elevenlabs:
   enabled: false
   api_key: ""
   max_chars: 200
+
+system:
+  update_channel: both  # Options: stable, unstable, both
+

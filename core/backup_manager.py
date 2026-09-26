@@ -127,7 +127,7 @@ class BackupManager:
             path_mappings[folder_abs] = zip_dir.replace("\\", "/")
 
         manifest = {
-            "version": "0.6.2",
+            "version": "0.6.3",
             "created_at": datetime.now().isoformat(),
             "profile_name": profile_name,
             "path_mappings": {},

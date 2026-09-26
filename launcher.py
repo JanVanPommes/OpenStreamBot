@@ -32,6 +32,76 @@ else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 QUEUE_STATUS_FILE = os.path.join(BASE_DIR, ".queue_status.json")
+BOT_STATUS_FILE = os.path.join(BASE_DIR, ".bot_status")
+
+def parse_version_info(v_str):
+    """
+    Parses version string (e.g. '0.6.2', 'v0.7', '0.6.3') into:
+    (numeric_tuple, is_stable, raw_str)
+    
+    Rule:
+    - 2-part versions (e.g. '0.7') = Stable
+    - 3-part versions (e.g. '0.6.2', '0.6.3') = Unstable
+    """
+    import re
+    cleaned = str(v_str).strip().lstrip("vV")
+    parts = cleaned.split(".")
+    int_parts = []
+    for p in parts:
+        num_match = re.match(r'^\d+', p)
+        if num_match:
+            int_parts.append(int(num_match.group()))
+        else:
+            int_parts.append(0)
+    
+    is_stable = (len(parts) == 2)
+    
+    while len(int_parts) < 3:
+        int_parts.append(0)
+        
+    return tuple(int_parts[:3]), is_stable, cleaned
+
+def is_pid_alive(pid):
+    """Checks if a process with given PID is alive across platforms."""
+    if not pid or pid <= 0:
+        return False
+    if os.name == 'nt':
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(0x1000, False, int(pid))
+            if handle:
+                exit_code = ctypes.c_ulong()
+                kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+                kernel32.CloseHandle(handle)
+                return exit_code.value == 259
+            return False
+        except Exception:
+            return False
+    else:
+        try:
+            os.kill(int(pid), 0)
+            return True
+        except OSError:
+            return False
+
+def kill_pid(pid):
+    """Terminates process cross-platform."""
+    if not pid or pid <= 0:
+        return
+    if os.name == 'nt':
+        try:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
+        except Exception as e:
+            print(f"Failed to kill pid {pid}: {e}")
+    else:
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+            time.sleep(0.5)
+            if is_pid_alive(pid):
+                os.kill(int(pid), signal.SIGKILL)
+        except Exception as e:
+            print(f"Failed to kill pid {pid}: {e}")
 
 # Erscheinungsbild setzen
 ctk.set_appearance_mode("Dark")
@@ -40,7 +110,7 @@ ctk.set_default_color_theme("blue")
 CONFIG_FILE = "config.yaml"
 # Nutze nun den internen Webserver statt Datei-Pfad
 DASHBOARD_URL = "http://localhost:8000/interface/dashboard.html"
-VERSION = "0.6.2"
+VERSION = "0.6.3"
 
 def bind_universal_scroll(scrollable_frame):
     """Recursively binds mouse wheel scroll events to a CTkScrollableFrame,
@@ -185,7 +255,9 @@ class App(ctk.CTk):
         self.obs_status_label.grid(row=10, column=0, padx=20, pady=(0, 10))
 
         # Version Label
-        self.version_label = ctk.CTkLabel(self.sidebar_frame, text=f"v{VERSION}", text_color="gray40", font=ctk.CTkFont(size=10))
+        _, cur_is_stable, _ = parse_version_info(VERSION)
+        channel_name = "Stable" if cur_is_stable else "Unstable"
+        self.version_label = ctk.CTkLabel(self.sidebar_frame, text=f"v{VERSION} ({channel_name})", text_color="gray40", font=ctk.CTkFont(size=10))
         self.version_label.grid(row=11, column=0, padx=20, pady=(0, 10), sticky="s")
 
         # Start status monitoring thread
@@ -356,21 +428,31 @@ StartupNotify=true
         # 1. Read persisted queue status snapshot from disk (works when bot runs in subprocess)
         status_file = QUEUE_STATUS_FILE
         if not os.path.exists(status_file):
-            alt_path = os.path.join(os.getcwd(), ".queue_status.json")
-            if os.path.exists(alt_path):
-                status_file = alt_path
+            bot_sub_path = os.path.join(BASE_DIR, "bot_internal", ".queue_status.json")
+            if os.path.exists(bot_sub_path):
+                status_file = bot_sub_path
+            else:
+                alt_path = os.path.join(os.getcwd(), ".queue_status.json")
+                if os.path.exists(alt_path):
+                    status_file = alt_path
 
         if os.path.exists(status_file):
-            try:
-                with open(status_file, 'r', encoding='utf-8') as f:
-                    content = f.read().strip()
-                    if content:
-                        statuses = json.loads(content)
-                        self._last_valid_statuses = statuses
-            except Exception as e:
-                print(f"[Launcher] Error reading status from {status_file}: {e}")
+            for _ in range(3):
+                try:
+                    with open(status_file, 'r', encoding='utf-8') as f:
+                        content = f.read().strip()
+                        if content:
+                            statuses = json.loads(content)
+                            self._last_valid_statuses = statuses
+                            break
+                except (PermissionError, OSError):
+                    time.sleep(0.02)
+                except Exception as e:
+                    print(f"[Launcher] Error reading status from {status_file}: {e}")
+                    break
         else:
-            print(f"[Launcher Queue Debug] Status file not found at: {status_file} (CWD: {os.getcwd()})")
+            # Check last valid
+            pass
 
         if not statuses and self._last_valid_statuses:
             statuses = self._last_valid_statuses
@@ -481,6 +563,8 @@ StartupNotify=true
 
             "vol_sfx": ctk.StringVar(value="1.0"),
             "vol_playlist": ctk.StringVar(value="0.5"),
+
+            "update_channel": ctk.StringVar(value="both"),
         }
 
         # Card 1: Server
@@ -516,6 +600,29 @@ StartupNotify=true
             ("Playlist Lautstärke (0.0-1.0):", self.cfg_vars["vol_playlist"], "0.5"),
         ])
 
+        # Card 6: Updates & Release-Kanal
+        card_updates = self._create_card_frame(self.settings_scroll, "🔄 Updates & Release-Kanal")
+        ctk.CTkLabel(
+            card_updates, 
+            text="Wähle aus, für welche Versionsstufen der Launcher nach Updates suchen soll:\n"
+                 "• Stable (2-stellig, z. B. v0.7): Nur geprüfte Hauptversionen\n"
+                 "• Unstable (3-stellig, z. B. v0.6.3): Frühe Test- und Entwicklerversionen\n"
+                 "• Beide: Alle Updates empfangen (empfohlen)",
+            text_color="gray70",
+            justify="left",
+            font=ctk.CTkFont(size=12)
+        ).pack(anchor="w", padx=15, pady=(5, 8))
+
+        row_ch = ctk.CTkFrame(card_updates, fg_color="transparent")
+        row_ch.pack(fill="x", padx=15, pady=(0, 12))
+        ctk.CTkLabel(row_ch, text="Update-Kanal:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=(0, 15))
+        self.seg_update_channel = ctk.CTkSegmentedButton(
+            row_ch, 
+            values=["Beide", "Stable", "Unstable"], 
+            command=self._on_update_channel_segment_changed
+        )
+        self.seg_update_channel.pack(side="left")
+
         # Bottom Actions Bar
         self.settings_btn_frame = ctk.CTkFrame(self.settings_frame, fg_color="transparent")
         self.settings_btn_frame.grid(row=3, column=0, padx=20, pady=15, sticky="ew")
@@ -526,6 +633,11 @@ StartupNotify=true
 
         self.load_config_to_ui()
         bind_universal_scroll(self.settings_scroll)
+
+    def _on_update_channel_segment_changed(self, value):
+        val_map = {"Beide": "both", "Stable": "stable", "Unstable": "unstable"}
+        channel = val_map.get(value, "both")
+        self.cfg_vars["update_channel"].set(channel)
 
     def _create_card_frame(self, parent, title):
         card = ctk.CTkFrame(parent, fg_color=("gray85", "#333333"), border_width=1, border_color=("gray75", "#444444"), corner_radius=10)
@@ -596,47 +708,288 @@ StartupNotify=true
 
         self.update_account_status()
         
-        # Check for updates
-        self.check_for_updates()
+        # Check if update_channel has ever been chosen
+        needs_channel_prompt = False
+        try:
+            cfg_raw = {}
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                    cfg_raw = yaml.safe_load(f) or {}
+            
+            ch = None
+            if "system" in cfg_raw and isinstance(cfg_raw["system"], dict):
+                ch = cfg_raw["system"].get("update_channel")
+            if not ch:
+                ch = cfg_raw.get("update_channel")
+            
+            if ch is None:
+                needs_channel_prompt = True
+        except Exception:
+            needs_channel_prompt = True
+
+        if needs_channel_prompt:
+            self.after(500, self.prompt_update_channel_selection)
+        else:
+            self.check_for_updates()
 
     def check_for_updates(self):
         def run_check():
             try:
                 import urllib.request
                 import json
-                from packaging import version
-                
-                url = "https://api.github.com/repos/JanVanPommes/OpenStreamBot/releases/latest"
+                import ssl
+
+                current_tuple, current_is_stable, _ = parse_version_info(VERSION)
+
+                # Get user channel preference: "both", "stable", "unstable"
+                pref = "both"
+                if hasattr(self, "cfg_vars") and "update_channel" in self.cfg_vars:
+                    pref = str(self.cfg_vars["update_channel"].get()).strip().lower()
+                elif os.path.exists(CONFIG_FILE):
+                    try:
+                        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                            c = yaml.safe_load(f) or {}
+                            pref = str(c.get("system", {}).get("update_channel", c.get("update_channel", "both"))).strip().lower()
+                    except:
+                        pass
+
+                # Fetch releases from GitHub API
+                # 1. Try /releases (contains all releases, both stable and pre-release/unstable)
+                url = "https://api.github.com/repos/JanVanPommes/OpenStreamBot/releases"
                 req = urllib.request.Request(url, headers={'User-Agent': "OpenStreamBot-Launcher"})
-                
-                with urllib.request.urlopen(req) as response:
-                    data = json.load(response)
-                    latest_tag = data.get("tag_name", "").lstrip("v")
-                    html_url = data.get("html_url", "")
-                    
-                    current_v = version.parse(VERSION)
-                    latest_v = version.parse(latest_tag)
-                    
-                    if latest_v > current_v:
-                        self.show_update_available(latest_tag, html_url)
-                        
+
+                # Handle Windows SSL certificate context gracefully
+                ctx = None
+                try:
+                    ctx = ssl.create_default_context()
+                except Exception:
+                    pass
+
+                releases_data = None
+                for ssl_ctx in [ctx, None, ssl._create_unverified_context()]:
+                    try:
+                        opener = urllib.request.urlopen(req, context=ssl_ctx, timeout=8)
+                        with opener as response:
+                            releases_data = json.load(response)
+                        break
+                    except Exception:
+                        continue
+
+                # Fallback to /releases/latest if /releases failed or returned empty
+                if not releases_data or not isinstance(releases_data, list):
+                    url_latest = "https://api.github.com/repos/JanVanPommes/OpenStreamBot/releases/latest"
+                    req_latest = urllib.request.Request(url_latest, headers={'User-Agent': "OpenStreamBot-Launcher"})
+                    for ssl_ctx in [ctx, None, ssl._create_unverified_context()]:
+                        try:
+                            with urllib.request.urlopen(req_latest, context=ssl_ctx, timeout=8) as response:
+                                item = json.load(response)
+                                releases_data = [item]
+                            break
+                        except Exception:
+                            continue
+
+                if not releases_data or not isinstance(releases_data, list):
+                    return
+
+                # Find newest eligible release
+                newest_tag = None
+                newest_tuple = current_tuple
+                newest_url = None
+                newest_stable = False
+
+                for rel in releases_data:
+                    if not isinstance(rel, dict) or rel.get("draft", False):
+                        continue
+                    tag = rel.get("tag_name", "").strip()
+                    if not tag:
+                        continue
+
+                    rel_tuple, rel_stable, _ = parse_version_info(tag)
+                    if rel.get("prerelease", False):
+                        rel_stable = False
+
+                    # Filter based on user's channel preference
+                    if pref == "stable" and not rel_stable:
+                        continue
+                    elif pref == "unstable" and rel_stable:
+                        continue
+                    # If pref == "both", all valid releases are accepted
+
+                    if rel_tuple > newest_tuple:
+                        newest_tuple = rel_tuple
+                        newest_tag = tag.lstrip("vV")
+                        newest_url = rel.get("html_url", "")
+                        newest_stable = rel_stable
+
+                if newest_tag and newest_tuple > current_tuple:
+                    self.show_update_available(newest_tag, newest_url, is_stable=newest_stable)
+
             except Exception as e:
                 print(f"Update check failed: {e}")
 
         threading.Thread(target=run_check, daemon=True).start()
 
-    def show_update_available(self, new_version, url):
+    def show_update_available(self, new_version, url, is_stable=False):
         # Update UI in main thread
         def ui_update():
-            btn = ctk.CTkButton(self.sidebar_frame, text=f"Update Avail: v{new_version}", 
-                                fg_color="#F59E0B", hover_color="#D97706",
+            badge = "Stable" if is_stable else "Unstable"
+            btn = ctk.CTkButton(self.sidebar_frame, text=f"Update: v{new_version} ({badge})", 
+                                fg_color="#10B981" if is_stable else "#F59E0B", 
+                                hover_color="#059669" if is_stable else "#D97706",
                                 command=lambda: webbrowser.open(url))
             btn.grid(row=9, column=0, padx=20, pady=(10, 20))
             
             # Also notify in dashboard log
-            self.log_queue.put(f"\n[System] Update Available: v{new_version} (Current: v{VERSION})\n")
+            self.log_queue.put(f"\n[System] Update Available: v{new_version} ({badge}) (Current: v{VERSION})\n")
         
         self.after(0, ui_update)
+
+    def prompt_update_channel_selection(self):
+        """Displays a modal popup on first start if update_channel is not yet configured,
+        explaining the 2-tier versioning policy (Stable vs Unstable) and saving the user's choice."""
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("Update-Kanal auswählen")
+        dlg.geometry("540x510")
+        dlg.resizable(False, False)
+        dlg.transient(self)
+        dlg.grab_set()
+
+        # Center dialog relative to main window
+        try:
+            self.update_idletasks()
+            x = self.winfo_x() + (self.winfo_width() // 2) - 270
+            y = self.winfo_y() + (self.winfo_height() // 2) - 255
+            dlg.geometry(f"+{max(0, x)}+{max(0, y)}")
+        except Exception:
+            pass
+
+        # Title / Header
+        header_frame = ctk.CTkFrame(dlg, fg_color="transparent")
+        header_frame.pack(fill="x", padx=25, pady=(20, 10))
+
+        ctk.CTkLabel(
+            header_frame, 
+            text="🚀 Neue Update-Richtlinie", 
+            font=ctk.CTkFont(size=20, weight="bold")
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            header_frame,
+            text="OpenStreamBot führt ein 2-Stufen Versionsmodell ein.\n"
+                 "Bitte wähle aus, welche Updates du in Zukunft erhalten möchtest:",
+            font=ctk.CTkFont(size=13),
+            text_color="gray70",
+            justify="left"
+        ).pack(anchor="w", pady=(5, 0))
+
+        # Channel descriptions card
+        card = ctk.CTkFrame(dlg, fg_color=("gray90", "#2B2B2B"), corner_radius=10)
+        card.pack(fill="both", expand=True, padx=25, pady=10)
+
+        selected_choice = ctk.StringVar(value="both")
+
+        # Option 1: Beide
+        opt_both = ctk.CTkRadioButton(
+            card,
+            text="Beide (Empfohlen)",
+            value="both",
+            variable=selected_choice,
+            font=ctk.CTkFont(weight="bold")
+        )
+        opt_both.pack(anchor="w", padx=20, pady=(15, 2))
+        ctk.CTkLabel(
+            card,
+            text="Erhalte alle neuen Versionen – sowohl stabile Hauptversionen\nals auch neue Testversionen.",
+            font=ctk.CTkFont(size=12),
+            text_color="gray60",
+            justify="left"
+        ).pack(anchor="w", padx=45, pady=(0, 12))
+
+        # Option 2: Stable
+        opt_stable = ctk.CTkRadioButton(
+            card,
+            text="Stable Releases (z. B. v0.7, v0.8)",
+            value="stable",
+            variable=selected_choice,
+            font=ctk.CTkFont(weight="bold")
+        )
+        opt_stable.pack(anchor="w", padx=20, pady=(0, 2))
+        ctk.CTkLabel(
+            card,
+            text="Nur gründlich getestete 2-stellige Hauptversionen für den\nproduktiven Einsatz im Stream.",
+            font=ctk.CTkFont(size=12),
+            text_color="gray60",
+            justify="left"
+        ).pack(anchor="w", padx=45, pady=(0, 12))
+
+        # Option 3: Unstable
+        opt_unstable = ctk.CTkRadioButton(
+            card,
+            text="Unstable / Pre-Releases (z. B. v0.6.3, v0.6.4)",
+            value="unstable",
+            variable=selected_choice,
+            font=ctk.CTkFont(weight="bold")
+        )
+        opt_unstable.pack(anchor="w", padx=20, pady=(0, 2))
+        ctk.CTkLabel(
+            card,
+            text="3-stellige Test- und Entwicklerversionen mit neuen Features\nund Bugfixes direkt zum Ausprobieren.",
+            font=ctk.CTkFont(size=12),
+            text_color="gray60",
+            justify="left"
+        ).pack(anchor="w", padx=45, pady=(0, 15))
+
+        # Note at bottom
+        ctk.CTkLabel(
+            dlg,
+            text="💡 Du kannst diese Einstellung jederzeit im Launcher unter 'Einstellungen' ändern.",
+            font=ctk.CTkFont(size=11, slant="italic"),
+            text_color="gray60"
+        ).pack(padx=25, pady=(0, 10))
+
+        def confirm_selection():
+            chosen = selected_choice.get()
+            if chosen not in ["both", "stable", "unstable"]:
+                chosen = "both"
+
+            # 1. Update in-memory UI variable
+            if hasattr(self, "cfg_vars") and "update_channel" in self.cfg_vars:
+                self.cfg_vars["update_channel"].set(chosen)
+            if hasattr(self, "seg_update_channel"):
+                rev_map = {"both": "Beide", "stable": "Stable", "unstable": "Unstable"}
+                self.seg_update_channel.set(rev_map.get(chosen, "Beide"))
+
+            # 2. Persist to config.yaml so popup never appears again
+            try:
+                cfg = {}
+                if os.path.exists(CONFIG_FILE):
+                    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                        cfg = yaml.safe_load(f) or {}
+                if "system" not in cfg or not isinstance(cfg["system"], dict):
+                    cfg["system"] = {}
+                cfg["system"]["update_channel"] = chosen
+                with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                    yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+            except Exception as ex:
+                print(f"[Launcher] Error saving initial update_channel to config: {ex}")
+
+            dlg.destroy()
+            # Trigger update check now that preference is established
+            self.check_for_updates()
+
+        # Handle window close (X button) - persist default "both" so it doesn't loop
+        dlg.protocol("WM_DELETE_WINDOW", confirm_selection)
+
+        btn = ctk.CTkButton(
+            dlg,
+            text="Auswahl bestätigen & Fortfahren",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color="#10B981",
+            hover_color="#059669",
+            height=38,
+            command=confirm_selection
+        )
+        btn.pack(fill="x", padx=25, pady=(0, 20))
 
     def update_account_status(self):
         if os.path.exists("token_twitch.json"):
@@ -956,6 +1309,15 @@ StartupNotify=true
         self.cfg_vars["vol_sfx"].set(str(vol.get("sfx", 1.0)))
         self.cfg_vars["vol_playlist"].set(str(vol.get("playlist", 0.5)))
 
+        sys_cfg = cfg.get("system", {})
+        ch = str(sys_cfg.get("update_channel", cfg.get("update_channel", "both"))).strip().lower()
+        if ch not in ["both", "stable", "unstable"]:
+            ch = "both"
+        self.cfg_vars["update_channel"].set(ch)
+        if hasattr(self, "seg_update_channel"):
+            rev_map = {"both": "Beide", "stable": "Stable", "unstable": "Unstable"}
+            self.seg_update_channel.set(rev_map.get(ch, "Beide"))
+
     def save_config_from_ui(self):
         if not hasattr(self, 'cfg_vars'):
             return
@@ -997,6 +1359,9 @@ StartupNotify=true
         except: cfg["audio"]["sfx"] = 1.0
         try: cfg["audio"]["playlist"] = float(self.cfg_vars["vol_playlist"].get().strip() or 0.5)
         except: cfg["audio"]["playlist"] = 0.5
+
+        if "system" not in cfg or not isinstance(cfg["system"], dict): cfg["system"] = {}
+        cfg["system"]["update_channel"] = self.cfg_vars["update_channel"].get().strip().lower() or "both"
 
         try:
             with open(CONFIG_FILE, "w") as f:
@@ -1130,23 +1495,22 @@ StartupNotify=true
     def kill_existing_bot(self):
         """Checks for existing bot process from previous run and kills it."""
         import json
-        if os.path.exists(".bot_status"):
+        status_file = BOT_STATUS_FILE
+        if not os.path.exists(status_file):
+            bot_sub = os.path.join(BASE_DIR, "bot_internal", ".bot_status")
+            if os.path.exists(bot_sub):
+                status_file = bot_sub
+            elif os.path.exists(".bot_status"):
+                status_file = ".bot_status"
+
+        if os.path.exists(status_file):
             try:
-                with open(".bot_status", "r") as f:
+                with open(status_file, "r", encoding="utf-8") as f:
                     status = json.load(f)
                 pid = status.get("pid")
-                if pid:
-                    try:
-                        os.kill(pid, 0) # Check if running
-                        print(f"Found orphan bot process {pid}, killing it...")
-                        os.kill(pid, signal.SIGTERM)
-                        time.sleep(1)
-                        try:
-                             os.kill(pid, 0)
-                             os.kill(pid, signal.SIGKILL)
-                        except: pass
-                    except OSError:
-                        pass # Not running
+                if pid and is_pid_alive(pid):
+                    print(f"Found orphan bot process {pid}, killing it...")
+                    kill_pid(pid)
             except Exception as e:
                 print(f"Error cleaning up: {e}")
 
@@ -1211,62 +1575,69 @@ StartupNotify=true
         webbrowser.open(DASHBOARD_URL)
 
     def status_monitor(self):
-        """Monitors .bot_status file to update UI indicators"""
+        """Monitors .bot_status file to update UI indicators safely across all platforms."""
         import json
         import os
         while True:
             try:
-                if os.path.exists(".bot_status"):
-                    with open(".bot_status", "r") as f:
-                        status = json.load(f)
-                    # Check for stale file (last update > 5s)
-                    stale = (time.time() - os.path.getmtime(".bot_status")) > 5
-                    
-                    # PID Check
+                status_file = BOT_STATUS_FILE
+                if not os.path.exists(status_file):
+                    bot_sub = os.path.join(BASE_DIR, "bot_internal", ".bot_status")
+                    if os.path.exists(bot_sub):
+                        status_file = bot_sub
+                    elif os.path.exists(".bot_status"):
+                        status_file = ".bot_status"
+
+                if os.path.exists(status_file):
+                    status = {}
+                    try:
+                        with open(status_file, "r", encoding="utf-8") as f:
+                            content = f.read().strip()
+                            if content:
+                                status = json.loads(content)
+                    except Exception:
+                        status = {}
+
+                    # Check for stale file (last update > 6s)
+                    mtime = os.path.getmtime(status_file)
+                    stale = (time.time() - mtime) > 6
+
                     reported_pid = status.get("pid")
-                    is_pid_running = False
-                    if reported_pid:
-                        try:
-                            # signal 0 check if process is alive
-                            os.kill(reported_pid, 0)
-                            is_pid_running = True
-                        except OSError:
-                            is_pid_running = False
-                    
-                    # Update Overall Status
-                    t_status = "Offline" if (stale or not is_pid_running) else status.get("twitch", "Offline")
-                    y_status = "Offline" if (stale or not is_pid_running) else status.get("youtube", "Offline")
-                    is_running = self.bot_process and self.bot_process.poll() is None
-                    
-                    if is_running or is_pid_running:
-                        if (t_status == "Online" or y_status == "Polling") and not stale:
-                            self.status_label.configure(text="Status: Bot Online", text_color="green")
+                    is_proc_running = bool(self.bot_process and self.bot_process.poll() is None)
+                    is_alive = is_proc_running or (bool(reported_pid) and is_pid_alive(reported_pid))
+
+                    active_bot = is_alive and not stale
+
+                    t_status = status.get("twitch", "Offline") if active_bot else "Offline"
+                    y_status = status.get("youtube", "Offline") if active_bot else "Offline"
+                    o_status = status.get("obs", "Offline") if active_bot else "Offline"
+
+                    def update_ui(t=t_status, y=y_status, o=o_status, active=active_bot, proc=is_proc_running):
+                        if proc or active:
+                            if t == "Online" or y == "Polling":
+                                self.status_label.configure(text="Status: Bot Online", text_color="green")
+                            else:
+                                self.status_label.configure(text="Status: Bot Starting...", text_color="orange")
                         else:
-                            self.status_label.configure(text="Status: Bot Starting...", text_color="orange")
-                    else:
-                        self.status_label.configure(text="Status: Bot Offline", text_color="red")
-                    
-                    # Update OBS Status
-                    o_status = "Offline" if (stale or not is_pid_running) else status.get("obs", "Offline")
-                    if o_status == "Connected" and (is_running or is_pid_running) and not stale:
-                        self.obs_status_label.configure(text="OBS: Connected", text_color="green")
-                    else:
-                        self.obs_status_label.configure(text="OBS: Offline", text_color="red")
-                        
-                    # Update YouTube Button Color if streaming
-                    y_status = status.get("youtube", "Offline")
-                    if y_status == "Polling":
-                        self.yt_connect_btn.configure(text="Disconnect YouTube Stream", fg_color="orange")
-                    else:
-                        if self.bot_process and self.bot_process.poll() is None:
-                             # Don't overwrite manually set state if possible, but good for sync
-                             pass
+                            self.status_label.configure(text="Status: Bot Offline", text_color="red")
+
+                        if o == "Connected" and active:
+                            self.obs_status_label.configure(text="OBS: Connected", text_color="green")
+                        else:
+                            self.obs_status_label.configure(text="OBS: Offline", text_color="red")
+
+                        if y == "Polling" and active:
+                            self.yt_connect_btn.configure(text="Disconnect YouTube Stream", fg_color="orange")
+
+                    self.after(0, update_ui)
                 else:
-                    # File doesn't exist, bot likely offline
-                    if not self.bot_process or self.bot_process.poll() is not None:
-                        self.status_label.configure(text="Status: Bot Offline", text_color="red")
-                        self.obs_status_label.configure(text="OBS: Offline", text_color="red")
-            except:
+                    is_proc_running = bool(self.bot_process and self.bot_process.poll() is None)
+                    if not is_proc_running:
+                        def reset_ui():
+                            self.status_label.configure(text="Status: Bot Offline", text_color="red")
+                            self.obs_status_label.configure(text="OBS: Offline", text_color="red")
+                        self.after(0, reset_ui)
+            except Exception:
                 pass
             time.sleep(1)
 

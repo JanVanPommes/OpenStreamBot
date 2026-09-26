@@ -6,9 +6,23 @@ from core.event_server import EventServer
 # NEU: Importiere den Twitch Bot
 from platforms.twitch_bot import TwitchBot
 
+if getattr(sys, 'frozen', False):
+    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+    if os.path.basename(exe_dir).lower() == "bot_internal":
+        BASE_DIR = os.path.dirname(exe_dir)
+    else:
+        BASE_DIR = exe_dir
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+BOT_STATUS_FILE = os.path.join(BASE_DIR, ".bot_status")
+
 def load_config():
+    config_path = os.path.join(BASE_DIR, "config.yaml")
+    if not os.path.exists(config_path):
+        config_path = "config.yaml"
     try:
-        with open("config.yaml", "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
     except FileNotFoundError:
         print("FEHLER: config.yaml nicht gefunden! Bitte erstellen.")
@@ -123,9 +137,9 @@ async def main():
     if 'obs' not in cfg: cfg['obs'] = {'host': 'localhost', 'port': 4455, 'password': ''}
     
     obs_ctrl = OBSController(cfg['obs'], ws_server)
-    obs_ctrl = OBSController(cfg['obs'], ws_server)
-    # Don't block on initial connect, just init
-    # obs_ctrl.connect() 
+    bot = None
+    yt_bot = None
+    yt_task = None
 
     
     # Elevenlabs TTS
@@ -174,7 +188,7 @@ async def main():
         # Start control file monitor instead of auto-starting YouTube
         async def youtube_control_monitor():
             """Monitor .yt_control file for start/stop commands"""
-            yt_task = None
+            nonlocal yt_task
             while True:
                 try:
                     if os.path.exists(".yt_control"):
@@ -219,14 +233,24 @@ async def main():
         import os
         while True:
             try:
+                twitch_online = bool(cfg.get('twitch', {}).get('enabled', False) and bot and getattr(bot, 'is_ready', False))
+                youtube_polling = bool((yt_task and not yt_task.done()) or (yt_bot and getattr(yt_bot, 'is_running', False)))
+                obs_connected = bool(obs_ctrl and getattr(obs_ctrl, 'is_connected', False))
                 status = {
-                    "twitch": "Online" if (cfg['twitch']['enabled'] and 'bot' in locals() and bot and hasattr(bot, 'is_ready') and bot.is_ready) else "Offline",
-                    "youtube": "Polling" if ('yt_task' in locals() and yt_task and not yt_task.done()) else "Offline",
-                    "obs": "Connected" if ('obs_ctrl' in locals() and obs_ctrl and obs_ctrl.is_connected) else "Offline",
+                    "twitch": "Online" if twitch_online else "Offline",
+                    "youtube": "Polling" if youtube_polling else "Offline",
+                    "obs": "Connected" if obs_connected else "Offline",
                     "pid": os.getpid()
                 }
-                with open(".bot_status", "w") as f:
+                tmp_status_file = BOT_STATUS_FILE + ".tmp"
+                with open(tmp_status_file, "w", encoding="utf-8") as f:
                     json.dump(status, f)
+                    f.flush()
+                try:
+                    os.replace(tmp_status_file, BOT_STATUS_FILE)
+                except OSError:
+                    with open(BOT_STATUS_FILE, "w", encoding="utf-8") as f:
+                        json.dump(status, f)
             except Exception as e:
                 # Silently ignore errors in reporter to prevent main loop crash
                 pass
@@ -268,17 +292,17 @@ async def main():
              except:
                  pass
 
-if __name__ == "__main__":
-    def report_status(twitch="Offline", youtube="Offline", obs="Offline"):
-        import json
-        import os
-        status = {"twitch": twitch, "youtube": youtube, "obs": obs, "pid": os.getpid()}
-        try:
-            with open(".bot_status", "w") as f:
-                json.dump(status, f)
-        except:
-            pass
+def report_status(twitch="Offline", youtube="Offline", obs="Offline"):
+    import json
+    import os
+    status = {"twitch": twitch, "youtube": youtube, "obs": obs, "pid": os.getpid()}
+    try:
+        with open(BOT_STATUS_FILE, "w", encoding="utf-8") as f:
+            json.dump(status, f)
+    except:
+        pass
 
+if __name__ == "__main__":
     try:
         # Initial status
         report_status()

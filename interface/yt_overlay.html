@@ -12,42 +12,34 @@
             overflow: hidden;
             background: transparent;
             width: 100%;
+            height: 100%;
+        }
 
-            body,
-            html {
-                margin: 0;
-                padding: 0;
-                overflow: hidden;
-                background: #000;
-                width: 100%;
-                height: 100%;
-            }
+        #player {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            display: none;
+        }
 
-            #player {
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                z-index: 1;
-                display: none;
-            }
-
-            #debug {
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 50%;
-                background: rgba(0, 0, 0, 0.7);
-                color: #0f0;
-                font-family: monospace;
-                font-size: 14px;
-                padding: 10px;
-                z-index: 10;
-                display: none;
-                pointer-events: none;
-                /* Hidden by default now, can toggle if needed */
-            }
+        #debug {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 50%;
+            background: rgba(0, 0, 0, 0.7);
+            color: #0f0;
+            font-family: monospace;
+            font-size: 14px;
+            padding: 10px;
+            z-index: 10;
+            display: none;
+            pointer-events: none;
+            /* Hidden by default, can toggle if needed */
+        }
     </style>
 </head>
 
@@ -75,6 +67,9 @@
         var queue = [];
         var isPlaying = false;
         var playerReady = false;
+        var progressTimer = null;
+        var safetyTimer = null;
+        var lastReportedTime = -1;
 
         function onYouTubeIframeAPIReady() {
             log("YT API Ready. Creating Player...");
@@ -89,7 +84,8 @@
                     'fs': 0,
                     'rel': 0,
                     'autoplay': 1,
-                    'mute': 0
+                    'mute': 0,
+                    'enablejsapi': 1
                 },
                 events: {
                     'onReady': onPlayerReady,
@@ -102,47 +98,126 @@
         function onPlayerReady(event) {
             log("Player Ready Event.");
             playerReady = true;
-            // Check queue
-            if (queue.length > 0) {
+            if (queue.length > 0 && !isPlaying) {
                 playNext();
             }
         }
 
         function onPlayerError(event) {
             log("Player Error: " + event.data);
+            finishVideo();
+        }
+
+        function finishVideo() {
+            if (!isPlaying) return;
+            log("Video Finished. Hiding and notifying backend.");
             isPlaying = false;
-            // Try next
-            if (queue.length > 0) playNext();
+
+            if (progressTimer) {
+                clearInterval(progressTimer);
+                progressTimer = null;
+            }
+            if (safetyTimer) {
+                clearTimeout(safetyTimer);
+                safetyTimer = null;
+            }
+            lastReportedTime = -1;
+
+            try {
+                if (player && typeof player.stopVideo === 'function') {
+                    player.stopVideo();
+                }
+            } catch (e) {
+                log("Error stopping player: " + e);
+            }
+
+            const playerEl = document.getElementById('player');
+            if (playerEl) {
+                playerEl.style.display = 'none';
+            }
+
+            // Notify Bot backend that video has ended (restores audio ducking)
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ event: "YouTubeEnded", data: {} }));
+            }
+
+            // Play next video after a brief pause if queued
+            if (queue.length > 0) {
+                setTimeout(playNext, 1000);
+            }
+        }
+
+        function startPlaybackMonitor() {
+            if (progressTimer) clearInterval(progressTimer);
+            lastReportedTime = -1;
+
+            progressTimer = setInterval(() => {
+                if (!player || !isPlaying) {
+                    if (progressTimer) clearInterval(progressTimer);
+                    return;
+                }
+
+                try {
+                    const currentTime = player.getCurrentTime();
+                    const duration = player.getDuration();
+
+                    if (duration > 0 && currentTime >= 0) {
+                        // 1. Reached end of video (standard finish)
+                        if (currentTime >= duration - 0.4) {
+                            log("Monitor: Reached end of video (" + currentTime.toFixed(1) + "/" + duration.toFixed(1) + "s)");
+                            finishVideo();
+                            return;
+                        }
+
+                        // 2. Loop detection: YouTube Shorts looping back to 0
+                        if (lastReportedTime > (duration * 0.5) && currentTime < 2.0 && (lastReportedTime - currentTime) > 3.0) {
+                            log("Monitor: Detected loop restart! Ending Short now.");
+                            finishVideo();
+                            return;
+                        }
+
+                        lastReportedTime = currentTime;
+                    }
+                } catch (e) {
+                    // Player might not be ready yet
+                }
+            }, 250);
         }
 
         function onPlayerStateChange(event) {
-            // ENDED = 0, PLAYING = 1, PAUSED = 2, BUFFERING = 3, CUED = 5
             var stateNames = { 0: "ENDED", 1: "PLAYING", 2: "PAUSED", 3: "BUFFERING", 5: "CUED" };
             var stateName = stateNames[event.data] || event.data;
             log("State Change: " + stateName);
 
-            if (event.data == YT.PlayerState.ENDED) {
-                log("Video Ended. Hiding.");
-                player.stopVideo();
-                document.getElementById('player').style.display = 'none'; // Hide player
-                isPlaying = false;
-
-                // Notify Bot
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ event: "YouTubeEnded", data: {} }));
-                }
-
-                // Optional: Play next if queue
-                if (queue.length > 0) {
-                    playNext();
-                } else {
-                    // Clear screen (YouTube keeps last frame)
-                    // player.clearVideo() is deprecated/not working always, we can reload or just hide
-                    // For now, assume it stays on last frame or we could seek to 0 and pause
-                }
-            } else if (event.data == YT.PlayerState.PLAYING) {
+            if (event.data === YT.PlayerState.ENDED) {
+                log("Video Ended event received.");
+                finishVideo();
+            } else if (event.data === YT.PlayerState.PLAYING) {
                 log("Video Playing.");
-                document.getElementById('player').style.display = 'block'; // Show player
+                document.getElementById('player').style.display = 'block';
+                isPlaying = true;
+                startPlaybackMonitor();
+
+                // Safety fallback timeout based on video duration
+                try {
+                    const dur = player.getDuration();
+                    if (dur > 0) {
+                        if (safetyTimer) clearTimeout(safetyTimer);
+                        safetyTimer = setTimeout(() => {
+                            log("Safety timer expired (" + dur + "s). Finishing video.");
+                            finishVideo();
+                        }, (dur + 2) * 1000);
+                    }
+                } catch (e) {}
+            } else if (event.data === YT.PlayerState.PAUSED && isPlaying) {
+                // If it paused at the end
+                try {
+                    const cur = player.getCurrentTime();
+                    const dur = player.getDuration();
+                    if (dur > 0 && cur >= dur - 0.8) {
+                        finishVideo();
+                    }
+                } catch (e) {}
             }
         }
 
@@ -151,6 +226,7 @@
                 log("Play requested but player not ready.");
                 return;
             }
+            if (queue.length === 0) return;
 
             var vidId = queue.shift();
             log("Playing ID: " + vidId);
@@ -179,6 +255,10 @@
                     if (!isPlaying) {
                         playNext();
                     }
+                } else if (msg.event === "YouTubeStop") {
+                    log("Received YouTubeStop.");
+                    queue = [];
+                    finishVideo();
                 }
             } catch (e) {
                 log("WS Error: " + e.message);

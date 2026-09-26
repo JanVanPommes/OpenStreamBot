@@ -11,7 +11,11 @@ import pygame._sdl2.audio as sdl_audio
 # Absolute path to queue status JSON
 import sys
 if getattr(sys, 'frozen', False):
-    BASE_DIR = os.path.dirname(os.path.abspath(sys.executable))
+    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+    if os.path.basename(exe_dir).lower() == "bot_internal":
+        BASE_DIR = os.path.dirname(exe_dir)
+    else:
+        BASE_DIR = exe_dir
 else:
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 QUEUE_STATUS_FILE = os.path.join(BASE_DIR, ".queue_status.json")
@@ -413,10 +417,24 @@ class ActionEngine:
             return False, {}
                 
         # 2. Twitch Raid (Min Viewers)
-        elif event_type == "twitch_raid":
-            min_v = trigger_config.get('min_viewers', 0)
-            if data.get('viewers', 0) < min_v:
+        elif mapped_type == "twitch_raid":
+            try:
+                min_v = int(trigger_config.get('min_viewers', 0) or 0)
+            except (ValueError, TypeError):
+                min_v = 0
+            try:
+                viewers = int(data.get('viewers', 0) or 0)
+            except (ValueError, TypeError):
+                viewers = 0
+
+            if viewers < min_v:
                 return False, {}
+            return True, {
+                "user": data.get('user', ''),
+                "game": data.get('game', ''),
+                "viewers": str(viewers),
+                "message": data.get('message', '')
+            }
                 
         # 3. OBS Scene Changed
         elif mapped_type == "obs_scene":
@@ -528,8 +546,26 @@ class ActionEngine:
             with open(tmp_file, 'w', encoding='utf-8') as f:
                 json.dump(status_data, f, indent=2, ensure_ascii=False)
                 f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp_file, QUEUE_STATUS_FILE)
+                try:
+                    os.fsync(f.fileno())
+                except OSError:
+                    pass
+
+            replaced = False
+            for attempt in range(5):
+                try:
+                    os.replace(tmp_file, QUEUE_STATUS_FILE)
+                    replaced = True
+                    break
+                except (PermissionError, OSError):
+                    time.sleep(0.02)
+
+            if not replaced:
+                with open(QUEUE_STATUS_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(status_data, f, indent=2, ensure_ascii=False)
+                if os.path.exists(tmp_file):
+                    try: os.remove(tmp_file)
+                    except: pass
         except Exception as e:
             print(f"[ActionEngine] Error saving queue status file: {e}")
 
@@ -948,6 +984,8 @@ class ActionEngine:
             if sa.get_init():
                 sa.stop() # Stops all playback on all channels
                 print("[Action] Stopped all sounds.")
+            if self.event_server:
+                asyncio.create_task(self.event_server.broadcast("YouTubeStop", {}))
                 
         elif sa_type == "playlist":
             folder = self.replace_vars(config.get('folder', ''), ctx)

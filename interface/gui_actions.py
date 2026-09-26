@@ -55,7 +55,7 @@ SUB_ACTION_DISPLAY_NAMES = {
 TRIGGER_CONTEXT_VARS = {
     "twitch_command": ["%user%", "%message%"],
     "youtube_command": ["%user%", "%message%"],
-    "twitch_raid": ["%user%", "%message%"],
+    "twitch_raid": ["%user%", "%game%", "%viewers%", "%message%"],
     "twitch_sub": ["%user%", "%message%"],
     "twitch_redemption": ["%user%", "%input%", "%message%"],
     "twitch_first_message": ["%user%", "%message%"],

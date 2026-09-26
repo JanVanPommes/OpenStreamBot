@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.3] - 2026-09-26
+### Added
+- **2-Tier Version & Release Channel System**:
+  - Implemented semantic separation between **Unstable** (3-digit versions, e.g. `0.6.3`, test & development pre-releases) and **Stable** (2-digit versions, e.g. `0.7`, production-ready releases).
+  - Added Update Channel preference to Configuration Settings ("Beide", "Stable", "Unstable"), persisted in `config.yaml` under `system.update_channel`.
+  - Added an intuitive first-start modal dialog for existing installations without a configured update channel to guide users and persist their preference.
+  - Sidebar version label dynamically indicates current stability status (e.g. `v0.6.3 (Unstable)`), and update notification badges highlight release type (green for Stable, amber for Unstable).
+
+### Fixed
+- **Windows Process & Status Monitoring**: Fixed dysfunctional Bot and OBS status tracking in the Windows Launcher by replacing invalid `os.kill` calls with native Windows process inspection (`ctypes.windll.kernel32`) and ensuring thread-safe UI updates.
+- **Windows Queue Status Tracking**: Resolved dysfunctional queue status on Windows caused by path resolution in PyInstaller subdirectories and file locking conflicts by implementing robust directory discovery and retry loops.
+- **Windows Update Check**: Fixed update check failures on Windows environments by introducing resilient SSL context negotiation and querying all GitHub releases (`/releases`) filtered by channel preference.
+- **Twitch Raid Trigger Context**: Fixed missing `%user%` and `%game%` context variables during Twitch Raids by fetching the raider's last played game via Helix API and properly mapping raid events in `ActionEngine`.
+- **YouTube Shorts & Clip Playback Loop**: Fixed an endless looping playback bug in the YouTube overlay caused by YouTube Shorts omitting the `ENDED` event, added 250ms progress/loop detection, duration safety timeouts, proper audio ducking restoration, a 1-second interval between queued clips, and support for the `YouTubeStop` event.
+
 ## [0.6.2] - 2026-08-08
 ### Fixed
 - **Cross-Platform Full Backup & Asset Auto-Mapping**: Resolved an issue where full profile backups imported across different operating systems (e.g. Linux to Windows) retained absolute original OS file paths (e.g. `/mnt/...`), rendering media unreachable.
