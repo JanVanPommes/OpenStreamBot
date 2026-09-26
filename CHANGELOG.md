@@ -13,7 +13,7 @@
 - **Windows Queue Status Tracking**: Resolved dysfunctional queue status on Windows caused by path resolution in PyInstaller subdirectories and file locking conflicts by implementing robust directory discovery and retry loops.
 - **Windows Update Check**: Fixed update check failures on Windows environments by introducing resilient SSL context negotiation and querying all GitHub releases (`/releases`) filtered by channel preference.
 - **Twitch Raid Trigger Context**: Fixed missing `%user%` and `%game%` context variables during Twitch Raids by fetching the raider's last played game via Helix API and properly mapping raid events in `ActionEngine`.
-- **YouTube Shorts & Clip Playback Loop**: Fixed an endless looping playback bug in the YouTube overlay caused by YouTube Shorts omitting the `ENDED` event, added 250ms progress/loop detection, duration safety timeouts, proper audio ducking restoration, a 1-second interval between queued clips, and support for the `YouTubeStop` event.
+- **YouTube Shorts & Clip Playback**: Fixed an endless looping playback bug in the YouTube overlay caused by YouTube Shorts omitting the `ENDED` event, resolved YouTube Embed Error 153 via proper referrer policy and origin parameters, added robust progress/loop detection, proper audio ducking restoration, a 1-second interval between queued clips, and support for the `YouTubeStop` event.
 
 ## [0.6.2] - 2026-08-08
 ### Fixed
