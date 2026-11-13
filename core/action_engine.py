@@ -245,7 +245,6 @@ class ActionEngine:
 
                 # Execute async
                 asyncio.create_task(self.execute_action(action, full_ctx))
-                break # One trigger per action is enough
 
     async def on_ws_message(self, message):
         """Handle incoming WebSocket messages from Overlay"""
@@ -276,6 +275,18 @@ class ActionEngine:
                             # Execute without context, since it's a manual trigger
                             asyncio.create_task(self.execute_action(action, {}))
                             break
+            elif event == "queue_control":
+                payload = data.get("data", {})
+                await self.execute_sub_action({
+                    "type": "queue_control",
+                    "queue_name": payload.get("queue_name", "Default"),
+                    "queue_action": payload.get("queue_action", "pause"),
+                    "queue_delay": payload.get("queue_delay", 0.0),
+                    "duration": payload.get("duration", 0)
+                }, {})
+            elif event == "get_queue_status" or data.get("action") == "get_queue_status":
+                if self.event_server:
+                    await self.event_server.broadcast("QueueStatus", self.get_all_queues_status())
                 
         except Exception as e:
             print(f"[ActionEngine] WS Message Error: {e}")
@@ -507,20 +518,36 @@ class ActionEngine:
         """Returns configuration dictionary for a given queue."""
         q_name = queue_name or "Default"
         if q_name not in self.queue_configs:
-            self.queue_configs[q_name] = {"delay": 0.0, "paused": False, "mode": "sequential"}
+            self.queue_configs[q_name] = {"delay": 0.0, "paused": False, "mode": "sequential", "paused_until": None}
         return self.queue_configs[q_name]
 
-    def set_queue_config(self, queue_name="Default", delay=None, paused=None, mode=None):
+    def set_queue_config(self, queue_name="Default", delay=None, paused=None, mode=None, paused_until=None):
         """Updates settings for a queue."""
         cfg = self.get_queue_config(queue_name)
         if delay is not None:
             cfg["delay"] = max(0.0, float(delay))
         if paused is not None:
             cfg["paused"] = bool(paused)
+            if bool(paused):
+                cfg["paused_until"] = paused_until
+            else:
+                cfg["paused_until"] = None
+            if queue_name not in self.queue_status:
+                self.queue_status[queue_name] = {"current_action": None, "last_action": None, "pending": 0, "status": "Paused" if paused else "Idle"}
+            else:
+                if paused:
+                    self.queue_status[queue_name]["status"] = "Paused"
+                elif self.queue_status[queue_name].get("status") == "Paused":
+                    self.queue_status[queue_name]["status"] = "Running" if self.queue_status[queue_name].get("current_action") else "Idle"
         if mode is not None:
             cfg["mode"] = str(mode)
         print(f"[ActionEngine] Updated Queue '{queue_name}' config: {cfg}")
         self.save_queue_status_file()
+        if self.event_server:
+            try:
+                asyncio.create_task(self.event_server.broadcast("QueueStatus", self.get_all_queues_status()))
+            except Exception:
+                pass
         return cfg
 
     def clear_queue(self, queue_name="Default"):
@@ -537,6 +564,11 @@ class ActionEngine:
                     break
             print(f"[ActionEngine] Cleared {cleared} pending items from Queue '{queue_name}'.")
             self.save_queue_status_file()
+            if self.event_server:
+                try:
+                    asyncio.create_task(self.event_server.broadcast("QueueStatus", self.get_all_queues_status()))
+                except Exception:
+                    pass
 
     def save_queue_status_file(self):
         """Persists current queue status snapshot to disk atomically for launcher UI sync across processes."""
@@ -572,21 +604,23 @@ class ActionEngine:
     def get_all_queues_status(self):
         """Returns snapshot of all queue states and configs."""
         res = {}
-        # Ensure Parallel is represented if tracked
-        all_q_names = set(self.queues.keys()).union(set(self.queue_status.keys()))
+        # Ensure all configured, active, and persisted queues are represented
+        all_q_names = set(self.queues.keys()).union(set(self.queue_status.keys())).union(set(self.queue_configs.keys()))
         for q_name in sorted(all_q_names):
             q = self.queues.get(q_name)
             pending_count = q.qsize() if q else 0
             cfg = self.get_queue_config(q_name)
             stat = self.queue_status.get(q_name, {})
+            is_paused = bool(cfg.get("paused", False))
             res[q_name] = {
                 "name": q_name,
                 "pending": pending_count,
                 "current_action": stat.get("current_action"),
                 "last_action": stat.get("last_action"),
                 "last_executed_at": stat.get("last_executed_at"),
-                "status": "Paused" if cfg.get("paused") else stat.get("status", "Idle"),
-                "paused": cfg.get("paused", False),
+                "status": "Paused" if is_paused else stat.get("status", "Idle"),
+                "paused": is_paused,
+                "paused_until": cfg.get("paused_until") if is_paused else None,
                 "delay": cfg.get("delay", 0.0),
                 "mode": cfg.get("mode", "sequential")
             }
@@ -598,11 +632,13 @@ class ActionEngine:
         if q_name not in self.queues:
             q = asyncio.Queue()
             self.queues[q_name] = q
-            self.queue_configs[q_name] = {"delay": 0.0, "paused": False, "mode": "sequential"}
+            if q_name not in self.queue_configs:
+                self.queue_configs[q_name] = {"delay": 0.0, "paused": False, "mode": "sequential", "paused_until": None}
+            is_paused = self.queue_configs[q_name].get("paused", False)
             if q_name not in self.queue_status:
-                self.queue_status[q_name] = {"current_action": None, "last_action": None, "pending": 0, "status": "Idle"}
+                self.queue_status[q_name] = {"current_action": None, "last_action": None, "pending": 0, "status": "Paused" if is_paused else "Idle"}
             else:
-                self.queue_status[q_name]["status"] = "Idle"
+                self.queue_status[q_name]["status"] = "Paused" if is_paused else "Idle"
                 self.queue_status[q_name]["current_action"] = None
                 self.queue_status[q_name]["pending"] = 0
             try:
@@ -625,6 +661,15 @@ class ActionEngine:
                 cfg = self.get_queue_config(queue_name)
 
             action, context_data = await queue_obj.get()
+
+            # Re-check pause status in case queue was paused while worker was idle at get()
+            cfg = self.get_queue_config(queue_name)
+            if cfg.get("paused", False):
+                queue_obj._queue.appendleft((action, context_data))
+                queue_obj._unfinished_tasks = max(0, queue_obj._unfinished_tasks - 1)
+                self.save_queue_status_file()
+                continue
+
             act_name = action.get('name', 'Unknown')
             import time
             now_ts = time.time()
@@ -666,9 +711,14 @@ class ActionEngine:
     async def execute_action(self, action, context_data):
         """Dispatches an action to its assigned queue or executes in parallel."""
         queue_name = action.get('queue', 'Default') or 'Default'
+        sub_actions = action.get('sub_actions', [])
+        has_queue_control = any(sa.get('type') == 'queue_control' for sa in sub_actions)
+        is_target_queue_paused = self.get_queue_config(queue_name).get("paused", False)
         
-        # Parallel / async queue bypasses sequential queueing
-        if queue_name.lower() in ["parallel", "async", "none"]:
+        # Parallel / async queue bypasses sequential queueing.
+        # Also bypass if the action contains queue_control and its own assigned queue is paused,
+        # so queue control actions (like Start/Resume/Stop/Clear) never deadlock waiting on a paused queue.
+        if queue_name.lower() in ["parallel", "async", "none"] or (has_queue_control and is_target_queue_paused):
             act_name = action.get('name', 'Unknown')
             import time
             now_ts = time.time()
@@ -1110,6 +1160,98 @@ class ActionEngine:
                         asyncio.create_task(revert())
             else:
                 print(f"[Action] Action '{target_name}' not found.")
+
+        # --- QUEUE CONTROL ---
+        elif sa_type == "queue_control":
+            raw_target = self.replace_vars(str(config.get('queue_name', 'Default')), ctx).strip() or 'Default'
+            q_action = str(config.get('queue_action', 'pause')).lower().strip()
+            try:
+                duration = float(config.get('duration', 0) or 0)
+            except (ValueError, TypeError):
+                duration = 0.0
+
+            # Resolve target queue(s)
+            if raw_target.lower() in ["all", "alle", "alle queues", "*"]:
+                known_queues = {"Default", "TTS", "Overlays", "SoundFX"}
+                known_queues.update(self.queues.keys())
+                known_queues.update(self.queue_configs.keys())
+                known_queues.update(self.queue_status.keys())
+                for a in self.actions:
+                    aq = a.get('queue', 'Default') or 'Default'
+                    if aq:
+                        known_queues.add(aq)
+                target_queues = sorted(
+                    q for q in known_queues
+                    if q.lower() not in ["parallel", "async", "none"]
+                )
+            else:
+                target_queues = [raw_target]
+
+            for q_name in target_queues:
+                if q_name.lower() in ["parallel", "async", "none"]:
+                    continue
+                self.get_or_create_queue(q_name)
+                cfg = self.get_queue_config(q_name)
+                old_paused = cfg.get("paused", False)
+
+                if q_action in ["start", "resume"]:
+                    self.set_queue_config(q_name, paused=False, paused_until=None)
+                    print(f"[ActionEngine] Queue '{q_name}' started/resumed.")
+                    if duration > 0:
+                        async def _revert_start(qn=q_name):
+                            await asyncio.sleep(duration)
+                            self.set_queue_config(qn, paused=True, paused_until=None)
+                            print(f"[ActionEngine] Queue '{qn}' timer expired ({duration}s) -> Paused.")
+                        asyncio.create_task(_revert_start())
+
+                elif q_action == "pause":
+                    p_until = (time.time() + duration) if duration > 0 else None
+                    self.set_queue_config(q_name, paused=True, paused_until=p_until)
+                    print(f"[ActionEngine] Queue '{q_name}' paused.")
+                    if duration > 0:
+                        async def _revert_pause(qn=q_name, expected_until=p_until):
+                            await asyncio.sleep(duration)
+                            if self.get_queue_config(qn).get("paused_until") == expected_until:
+                                self.set_queue_config(qn, paused=False, paused_until=None)
+                                print(f"[ActionEngine] Queue '{qn}' timer expired ({duration}s) -> Resumed.")
+                        asyncio.create_task(_revert_pause())
+
+                elif q_action == "toggle":
+                    new_paused = not old_paused
+                    p_until = (time.time() + duration) if (new_paused and duration > 0) else None
+                    self.set_queue_config(q_name, paused=new_paused, paused_until=p_until)
+                    print(f"[ActionEngine] Queue '{q_name}' toggled -> {'Paused' if new_paused else 'Running/Idle'}.")
+                    if duration > 0:
+                        async def _revert_toggle(qn=q_name, rev_state=old_paused):
+                            await asyncio.sleep(duration)
+                            self.set_queue_config(qn, paused=rev_state, paused_until=None)
+                            print(f"[ActionEngine] Queue '{qn}' timer expired ({duration}s) -> Reverted to {'Paused' if rev_state else 'Running/Idle'}.")
+                        asyncio.create_task(_revert_toggle())
+
+                elif q_action == "stop":
+                    p_until = (time.time() + duration) if duration > 0 else None
+                    self.clear_queue(q_name)
+                    self.set_queue_config(q_name, paused=True, paused_until=p_until)
+                    print(f"[ActionEngine] Queue '{q_name}' stopped (paused & cleared).")
+                    if duration > 0:
+                        async def _revert_stop(qn=q_name, expected_until=p_until):
+                            await asyncio.sleep(duration)
+                            if self.get_queue_config(qn).get("paused_until") == expected_until:
+                                self.set_queue_config(qn, paused=False, paused_until=None)
+                                print(f"[ActionEngine] Queue '{qn}' stop timer expired ({duration}s) -> Resumed.")
+                        asyncio.create_task(_revert_stop())
+
+                elif q_action == "clear":
+                    self.clear_queue(q_name)
+                    print(f"[ActionEngine] Queue '{q_name}' cleared.")
+
+                elif q_action == "set_delay":
+                    try:
+                        delay_val = max(0.0, float(self.replace_vars(str(config.get('queue_delay', 0.0)), ctx)))
+                    except (ValueError, TypeError):
+                        delay_val = 0.0
+                    self.set_queue_config(q_name, delay=delay_val)
+                    print(f"[ActionEngine] Queue '{q_name}' delay set to {delay_val}s.")
 
         # --- VOLUME CONTROL ---
         elif sa_type == "set_volume":

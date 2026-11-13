@@ -5,15 +5,39 @@ import functools
 import os
 import sys
 
-class ReusableTCPServer(socketserver.TCPServer):
+class ReusableTCPServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        exc_type, _, _ = sys.exc_info()
+        if exc_type in (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            return  # Client closed connection unexpectedly; ignore cleanly without stderr traceback
+        super().handle_error(request, client_address)
 
 class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")
-        super().end_headers()
+        try:
+            super().end_headers()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
+
+    def copyfile(self, source, outputfile):
+        try:
+            super().copyfile(source, outputfile)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
+
+    def log_message(self, format, *args):
+        # Write HTTP access logs to stdout instead of stderr so they don't get colored as errors in Launcher
+        sys.stdout.write("%s - - [%s] %s\n" %
+                         (self.address_string(),
+                          self.log_date_time_string(),
+                          format % args))
+        sys.stdout.flush()
 
 class SimpleWebServer(threading.Thread):
     def __init__(self, port=8000):
@@ -54,4 +78,5 @@ class SimpleWebServer(threading.Thread):
     def stop(self):
         if self.httpd:
             self.httpd.shutdown()
+            self.httpd.server_close()
 

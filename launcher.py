@@ -110,7 +110,7 @@ ctk.set_default_color_theme("blue")
 CONFIG_FILE = "config.yaml"
 # Nutze nun den internen Webserver statt Datei-Pfad
 DASHBOARD_URL = "http://localhost:8000/interface/dashboard.html"
-VERSION = "0.6.3"
+VERSION = "0.6.4"
 
 def bind_universal_scroll(scrollable_frame):
     """Recursively binds mouse wheel scroll events to a CTkScrollableFrame,
@@ -413,7 +413,7 @@ StartupNotify=true
             self.refresh_queue_overview()
         except Exception:
             pass
-        self.after(1500, self.update_queue_overview_loop)
+        self.after(1000, self.update_queue_overview_loop)
 
     def refresh_queue_overview(self):
         if not hasattr(self, 'queue_chips_frame'):
@@ -475,15 +475,49 @@ StartupNotify=true
                 "SoundFX": {"name": "SoundFX", "pending": 0, "status": "Idle", "paused": False, "last_action": None},
             }
 
+        now_ts = time.time()
+
+        def _fmt_rem(paused_until):
+            if not paused_until:
+                return ""
+            try:
+                rem = max(0, int(float(paused_until) - now_ts))
+            except (ValueError, TypeError):
+                return ""
+            if rem <= 0:
+                return ""
+            if rem >= 60:
+                return f"{rem // 60}m {rem % 60:02d}s"
+            return f"{rem}s"
+
         total_pending = sum(s.get("pending", 0) for s in statuses.values())
         any_running = any(s.get("status") == "Running" for s in statuses.values())
-        
-        if any_running:
-            self.lbl_queue_summary.configure(text=f"⚡ Active Execution | Pending: {total_pending}", text_color="#10B981")
-        elif total_pending > 0:
-            self.lbl_queue_summary.configure(text=f"⏳ Queued: {total_pending}", text_color="#F59E0B")
+        paused_items = []
+        for qn, s in statuses.items():
+            if s.get("paused") or s.get("status") == "Paused":
+                rem_str = _fmt_rem(s.get("paused_until"))
+                paused_items.append(f"{qn} ({rem_str})" if rem_str else qn)
+
+        if paused_items:
+            paused_summary = f"⏸ Pausiert: {', '.join(paused_items)}"
+            if any_running:
+                summary_txt = f"⚡ Aktiv | {paused_summary}" + (f" | Wartend: {total_pending}" if total_pending > 0 else "")
+            elif total_pending > 0:
+                summary_txt = f"{paused_summary} | ⏳ Wartend: {total_pending}"
+            else:
+                summary_txt = paused_summary
+            self.lbl_queue_summary.configure(text=summary_txt, text_color="#F59E0B")
+            if hasattr(self, 'queue_overview_frame'):
+                self.queue_overview_frame.configure(border_color="#F59E0B")
         else:
-            self.lbl_queue_summary.configure(text="System Status: Idle", text_color="gray70")
+            if hasattr(self, 'queue_overview_frame'):
+                self.queue_overview_frame.configure(border_color=("gray75", "#444444"))
+            if any_running:
+                self.lbl_queue_summary.configure(text=f"⚡ Active Execution | Pending: {total_pending}", text_color="#10B981")
+            elif total_pending > 0:
+                self.lbl_queue_summary.configure(text=f"⏳ Queued: {total_pending}", text_color="#F59E0B")
+            else:
+                self.lbl_queue_summary.configure(text="System Status: Idle", text_color="gray70")
 
         # Clean up chips for removed queues
         existing_keys = set(self._queue_chip_widgets.keys())
@@ -495,12 +529,15 @@ StartupNotify=true
         for q_name, data in statuses.items():
             st = data.get("status", "Idle")
             pending = data.get("pending", 0)
-            paused = data.get("paused", False)
+            paused = bool(data.get("paused", False) or st == "Paused")
             last = data.get("last_action")
             
             if paused:
-                badge_bg = "#B45309"
-                badge_txt = f"{q_name}: ⏸ Paused"
+                badge_bg = "#D97706"
+                rem_str = _fmt_rem(data.get("paused_until"))
+                badge_txt = f"{q_name}: ⏸ Pausiert" + (f" ({rem_str})" if rem_str else "")
+                if pending > 0:
+                    badge_txt += f" (+{pending} wartend)"
             elif st == "Running":
                 badge_bg = "#047857"
                 cur = data.get("current_action", "")

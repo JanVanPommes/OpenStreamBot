@@ -43,6 +43,7 @@ SUB_ACTION_DISPLAY_NAMES = {
     "trigger_action": "🔗 Action auslösen",
     "set_volume": "🔈 Lautstärke ändern",
     "set_action_state": "🔀 Action-Status ändern",
+    "queue_control": "📋 Queue steuern (Start/Pause/Stopp)",
     "twitch_create_clip": "🎬 Twitch Clip erstellen",
     "twitch_enable_reward": "💎 Twitch: Reward aktivieren",
     "twitch_disable_reward": "💎 Twitch: Reward deaktivieren",
@@ -481,6 +482,41 @@ class ActionEditorFrame(ctk.CTkFrame):
         groups = self.get_group_names()
         self.combo_group.configure(values=groups)
 
+    def get_queue_names(self, include_parallel=True, include_all=False):
+        """Returns a list of all available queue names (built-in + custom from actions & status)."""
+        import json
+        base = ["Default", "Parallel", "TTS", "Overlays", "SoundFX"] if include_parallel else ["Default", "TTS", "Overlays", "SoundFX"]
+        custom = set()
+        for action in self.actions:
+            q = (action.get('queue', 'Default') or 'Default').strip()
+            if q and q not in base and (include_parallel or q.lower() not in ['parallel', 'async', 'none']):
+                custom.add(q)
+            for sa in action.get('sub_actions', []):
+                if sa.get('type') == 'queue_control':
+                    sq = (sa.get('queue_name', '') or '').strip()
+                    if sq and sq not in base and sq.lower() not in ['all', 'alle', 'alle queues', '*', 'parallel', 'async', 'none']:
+                        custom.add(sq)
+        status_path = os.path.join(BASE_DIR, ".queue_status.json")
+        if os.path.exists(status_path):
+            try:
+                with open(status_path, "r", encoding="utf-8") as f:
+                    st_data = json.load(f)
+                    if isinstance(st_data, dict):
+                        for qk in st_data.keys():
+                            if qk and qk not in base and (include_parallel or qk.lower() not in ['parallel', 'async', 'none']):
+                                custom.add(qk)
+            except Exception:
+                pass
+        res = list(base) + sorted(custom)
+        if include_all:
+            res = ["Alle Queues"] + res
+        return res
+
+    def _update_queue_combo(self):
+        """Refreshes the queue ComboBox values with all existing queue names."""
+        if hasattr(self, 'combo_queue'):
+            self.combo_queue.configure(values=self.get_queue_names(include_parallel=True, include_all=False))
+
     def _update_context_vars(self, triggers):
         """Update the context variables info panel based on the action's triggers."""
         if not triggers:
@@ -604,6 +640,7 @@ class ActionEditorFrame(ctk.CTkFrame):
         self.var_cooldown.set(str(self.current_action.get('cooldown', 0)))
         self.var_enabled.set(self.current_action.get('enabled', True))
         self._update_group_combo()
+        self._update_queue_combo()
         
         # Smooth in-place selection update (Zero flickering!)
         self._update_sidebar_button_selection(index)
@@ -767,6 +804,27 @@ class ActionEditorFrame(ctk.CTkFrame):
                     summary += f": -> {s['action_name']}"
                     if s.get('var_name'):
                         summary += f" ({s['var_name']}={s.get('var_value')})"
+            elif s['type'] == 'queue_control':
+                q_target = s.get('queue_name', 'Default')
+                if str(q_target).lower() in ('all', 'alle', 'alle queues', '*'):
+                    q_target = 'Alle Queues'
+                q_act = s.get('queue_action', 'pause')
+                q_act_labels = {
+                    'start': '▶ Start',
+                    'resume': '▶ Start',
+                    'pause': '⏸ Pause',
+                    'stop': '⏹ Stopp & Leeren',
+                    'clear': '🗑 Leeren',
+                    'toggle': '⏯ Toggle',
+                    'set_delay': f"⏱ Delay={s.get('queue_delay', 0)}s"
+                }
+                act_str = q_act_labels.get(q_act, q_act)
+                try:
+                    dur = int(float(s.get('duration', 0) or 0))
+                except (ValueError, TypeError):
+                    dur = 0
+                dur_str = f" ({dur}s)" if dur > 0 and q_act in ('pause', 'start', 'resume', 'toggle', 'stop') else ""
+                summary += f": [{q_target}] -> {act_str}{dur_str}"
             elif s['type'] == 'random_action_group':
                 summary += f": {len(s.get('targets', []))} Actions"
             elif s['type'] in ['twitch_enable_reward', 'twitch_disable_reward']:
@@ -1152,6 +1210,76 @@ class SubActionDialog(ctk.CTkToplevel):
             dur_entry.pack(fill="x", pady=5)
             self.widgets['duration'] = dur_entry
 
+        elif choice == "queue_control":
+            ctk.CTkLabel(self.frame_config, text="Ziel-Queue (oder eigener Name):").pack(anchor="w")
+            if hasattr(self.master, 'get_queue_names'):
+                q_names = self.master.get_queue_names(include_parallel=False, include_all=True)
+            else:
+                q_names = ["Alle Queues", "Default", "TTS", "Overlays", "SoundFX"]
+
+            init_q = get_val('queue_name', 'Default')
+            if init_q.lower() in ('all', 'alle', 'alle queues', '*'):
+                init_q = "Alle Queues"
+            q_var = ctk.StringVar(value=init_q)
+            q_combo = ctk.CTkComboBox(self.frame_config, variable=q_var, values=q_names)
+            q_combo.pack(fill="x", pady=5)
+            self.widgets['queue_name'] = q_var
+
+            ctk.CTkLabel(self.frame_config, text="Queue-Aktion:").pack(anchor="w", pady=(8, 0))
+            q_action_options = [
+                ("start", "▶ Start / Fortsetzen (Resume)"),
+                ("pause", "⏸ Pause (Warteschlange anhalten)"),
+                ("stop", "⏹ Stopp (Pausieren & Leeren)"),
+                ("clear", "🗑 Leeren (Nur Warteschlange löschen)"),
+                ("toggle", "⏯ Toggle (Pause umschalten)"),
+                ("set_delay", "⏱ Verzögerung (Delay) ändern"),
+            ]
+            self._qa_internal_to_display = {k: v for k, v in q_action_options}
+            self._qa_display_to_internal = {v: k for k, v in q_action_options}
+
+            init_qa = get_val('queue_action', 'pause')
+            if init_qa == 'resume':
+                init_qa = 'start'
+            init_qa_display = self._qa_internal_to_display.get(init_qa, q_action_options[1][1])
+            qa_var = ctk.StringVar(value=init_qa_display)
+
+            # Dynamic containers for Duration vs Delay
+            frame_dur = ctk.CTkFrame(self.frame_config, fg_color="transparent")
+            ctk.CTkLabel(frame_dur, text="Dauer in Sekunden (0 = dauerhaft):").pack(anchor="w")
+            dur_entry = ctk.CTkEntry(frame_dur)
+            dur_entry.insert(0, get_val('duration', '0'))
+            dur_entry.pack(fill="x", pady=5)
+            self.widgets['duration'] = dur_entry
+
+            frame_delay = ctk.CTkFrame(self.frame_config, fg_color="transparent")
+            ctk.CTkLabel(frame_delay, text="Verzögerung zwischen Actions (Sekunden, z.B. 0.5):").pack(anchor="w")
+            delay_entry = ctk.CTkEntry(frame_delay)
+            delay_entry.insert(0, get_val('queue_delay', '0.0'))
+            delay_entry.pack(fill="x", pady=5)
+            self.widgets['queue_delay'] = delay_entry
+
+            def on_qa_change(selected_display):
+                internal_qa = self._qa_display_to_internal.get(selected_display, 'pause')
+                if internal_qa in ('start', 'pause', 'stop', 'toggle'):
+                    frame_delay.pack_forget()
+                    frame_dur.pack(fill="x", pady=(8, 0))
+                elif internal_qa == 'set_delay':
+                    frame_dur.pack_forget()
+                    frame_delay.pack(fill="x", pady=(8, 0))
+                else:
+                    frame_dur.pack_forget()
+                    frame_delay.pack_forget()
+
+            qa_combo = ctk.CTkComboBox(
+                self.frame_config,
+                variable=qa_var,
+                values=[v for _, v in q_action_options],
+                command=on_qa_change
+            )
+            qa_combo.pack(fill="x", pady=5)
+            self.widgets['queue_action_display'] = qa_var
+            on_qa_change(init_qa_display)
+
         elif choice == "set_volume":
             # Target
             ctk.CTkLabel(self.frame_config, text="Target:").pack(anchor="w")
@@ -1464,7 +1592,17 @@ class SubActionDialog(ctk.CTkToplevel):
             if 'state' in self.widgets:
                 res['state'] = self.widgets['state'].get()
             if 'duration' in self.widgets:
-                 res['duration'] = int(self.widgets['duration'].get())
+                 res['duration'] = int(float(self.widgets['duration'].get() or 0))
+            if 'queue_name' in self.widgets:
+                qn_val = self.widgets['queue_name'].get().strip() or 'Default'
+                if qn_val.lower() in ('alle queues', 'alle', 'all', '*'):
+                    qn_val = 'All'
+                res['queue_name'] = qn_val
+            if 'queue_action_display' in self.widgets:
+                qa_disp = self.widgets['queue_action_display'].get()
+                res['queue_action'] = getattr(self, '_qa_display_to_internal', {}).get(qa_disp, 'pause')
+            if 'queue_delay' in self.widgets:
+                res['queue_delay'] = float(self.widgets['queue_delay'].get() or 0.0)
             if 'csharp_mode' in self.widgets:
                  res['csharp_mode'] = self.widgets['csharp_mode'].get()
             if 'code' in self.widgets:
@@ -1830,20 +1968,53 @@ class QueueManagerDialog(ctk.CTkToplevel):
 
         self.refresh_queues()
 
+    def _send_queue_ws(self, payload_data):
+        import threading, asyncio, websockets, json
+        def _run():
+            async def _send():
+                try:
+                    async with websockets.connect(get_ws_url(), open_timeout=2) as ws:
+                        await ws.send(json.dumps({"event": "queue_control", "data": payload_data}))
+                except Exception as e:
+                    print(f"[QueueManager] WS send failed: {e}")
+            try:
+                asyncio.run(_send())
+            except Exception:
+                pass
+            if self.winfo_exists():
+                self.after(200, self.refresh_queues)
+        threading.Thread(target=_run, daemon=True).start()
+
     def add_custom_queue(self):
         q_name = self.entry_new_q.get().strip()
-        if q_name and self.action_engine:
+        if not q_name:
+            return
+        if self.action_engine:
             self.action_engine.get_or_create_queue(q_name)
             self.entry_new_q.delete(0, "end")
             self.refresh_queues()
+        else:
+            self.entry_new_q.delete(0, "end")
+            self._send_queue_ws({"queue_name": q_name, "queue_action": "start"})
 
     def refresh_queues(self):
         for w in self.scroll.winfo_children():
             w.destroy()
 
+        statuses = None
         if self.action_engine:
             statuses = self.action_engine.get_all_queues_status()
         else:
+            import json
+            status_path = os.path.join(BASE_DIR, ".queue_status.json")
+            if os.path.exists(status_path):
+                try:
+                    with open(status_path, "r", encoding="utf-8") as f:
+                        statuses = json.load(f)
+                except Exception:
+                    statuses = None
+
+        if not statuses:
             statuses = {
                 "Default": {"name": "Default", "pending": 0, "status": "Idle", "paused": False, "delay": 0.0},
                 "Parallel": {"name": "Parallel", "pending": 0, "status": "Concurrent (No Queue)", "paused": False, "delay": 0.0},
@@ -1882,9 +2053,12 @@ class QueueManagerDialog(ctk.CTkToplevel):
                     val = float(vd.get())
                     if self.action_engine:
                         self.action_engine.set_queue_config(qn, delay=val)
+                    else:
+                        self._send_queue_ws({"queue_name": qn, "queue_action": "set_delay", "queue_delay": val})
                 except ValueError: pass
 
             entry_delay.bind("<FocusOut>", lambda e, qn=q_name, vd=var_delay: save_delay(qn, vd))
+            entry_delay.bind("<Return>", lambda e, qn=q_name, vd=var_delay: save_delay(qn, vd))
 
             # Pause / Resume
             is_paused = data.get("paused", False)
@@ -1943,9 +2117,13 @@ class QueueManagerDialog(ctk.CTkToplevel):
     def toggle_pause(self, q_name, current_paused):
         if self.action_engine:
             self.action_engine.set_queue_config(q_name, paused=not current_paused)
-        self.refresh_queues()
+            self.refresh_queues()
+        else:
+            self._send_queue_ws({"queue_name": q_name, "queue_action": "start" if current_paused else "pause"})
 
     def clear_queue(self, q_name):
         if self.action_engine:
             self.action_engine.clear_queue(q_name)
-        self.refresh_queues()
+            self.refresh_queues()
+        else:
+            self._send_queue_ws({"queue_name": q_name, "queue_action": "clear"})

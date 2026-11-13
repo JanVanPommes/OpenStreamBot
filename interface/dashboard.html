@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenStreamBot Control Center</title>
-    <link rel="stylesheet" href="style.css?v=0.5.0">
+    <link rel="stylesheet" href="style.css?v=0.6.4">
 </head>
 
 <body>
@@ -15,8 +15,10 @@
             <div id="status" title="Verbindungsstatus"></div>
             <img src="../assets/logo.png" alt="OpenStreamBot" style="width: 32px; height: 32px;">
             <h1>OpenStreamBot</h1>
+            <div id="queue-status-badge" style="display:none; background: #D97706; color: white; padding: 4px 10px; border-radius: 6px; font-size: 0.82rem; font-weight: 600; margin-left: 8px; box-shadow: 0 0 8px rgba(217, 119, 6, 0.4);"></div>
         </div>
         <div style="display:flex; align-items:center; gap: 15px;">
+            <button onclick="triggerTestShort()" class="btn-yt" style="background: #2563EB;" title="Zufälligen Short im Overlay testen">📱 Test Short</button>
             <button onclick="startYouTubeStream()" class="btn-yt" title="YouTube Stream-Suche starten">▶ YouTube Start</button>
             <button onclick="toggleSettings()"
                 style="background:none; border:none; color:white; cursor:pointer; font-size: 1.2em;">⚙️</button>
@@ -41,7 +43,7 @@
         <button onclick="sendMessage()" id="send-btn">➤</button>
     </div>
 
-    <script src="app.js?v=0.5.0"></script>
+    <script src="app.js?v=0.6.4"></script>
 </body>
 
 </html>

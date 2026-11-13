@@ -1,4 +1,4 @@
-from twitchio.ext import commands, pubsub
+from twitchio.ext import commands, pubsub, eventsub
 import datetime
 import os
 import json
@@ -119,8 +119,38 @@ class TwitchBot(commands.Bot):
         # First Words Cache (Session based)
         self.seen_users = set()
         
-        # PubSub
+        # EventSub (Twitch's modern replacement for deprecated PubSub)
+        try:
+            self.eventsub = eventsub.EventSubWSClient(self)
+        except Exception as e:
+            self.eventsub = None
+            print(f"[Twitch] EventSubWSClient Init Fehler: {e}")
+
+        # PubSub (Legacy Fallback)
         self.pubsub = pubsub.PubSubPool(self)
+
+    async def event_eventsub_notification_channel_reward_redeem(self, payload: eventsub.NotificationEvent):
+        """Wird aufgerufen wenn Channel Points via EventSub eingelöst wurden"""
+        try:
+            event = payload.data
+            user_name = event.user.name if hasattr(event.user, 'name') else str(event.user)
+            print(f"[Twitch EventSub] Redemption: {event.reward.title} by {user_name}")
+            
+            data = {
+                "reward_title": event.reward.title,
+                "reward_cost": event.reward.cost,
+                "user": user_name,
+                "input": event.input or "",
+                "status": event.status, # FULFILLED or UNFULFILLED
+                "timestamp": str(datetime.datetime.now()),
+                "redemption_id": event.id,
+                "reward_id": event.reward.id
+            }
+            
+            await self.event_server.broadcast("TwitchRedemption", data)
+            
+        except Exception as e:
+            print(f"[Twitch EventSub Error] {e}")
 
     async def event_pubsub_channel_points(self, event: pubsub.PubSubChannelPointsMessage):
         """Wird aufgerufen wenn Channel Points eingelöst wurden"""
@@ -305,15 +335,31 @@ class TwitchBot(commands.Bot):
             users = await self.fetch_users(names=[self.channel_name])
             if users:
                 channel_id = users[0].id
+                self.channel_id = channel_id
                 
-                # --- PUBSUB SUBSCRIBE ---
-                try:
-                    token = self._http.token.replace("oauth:", "")
-                    topics = [pubsub.channel_points(token)[int(channel_id)]]
-                    await self.pubsub.subscribe_topics(topics)
-                    print("[Twitch] PubSub für Channel Points abonniert.")
-                except Exception as e:
-                    print(f"[Twitch PubSub] Fehler beim Abonnieren: {e}")
+                # --- EVENTSUB SUBSCRIBE (Modern Twitch Realtime Events) ---
+                eventsub_ok = False
+                if getattr(self, 'eventsub', None):
+                    try:
+                        raw_token = self._http.token.replace("oauth:", "")
+                        await self.eventsub.subscribe_channel_points_redeemed(
+                            broadcaster=channel_id,
+                            token=raw_token
+                        )
+                        eventsub_ok = True
+                        print("[Twitch EventSub] Channel Points erfolgreich über EventSub abonniert.")
+                    except Exception as e:
+                        print(f"[Twitch EventSub] Fehler beim Abonnieren: {e}")
+
+                # --- PUBSUB SUBSCRIBE (Legacy Fallback nur falls EventSub nicht aktiv) ---
+                if not eventsub_ok:
+                    try:
+                        token = self._http.token.replace("oauth:", "")
+                        topics = [pubsub.channel_points(token)[int(channel_id)]]
+                        await self.pubsub.subscribe_topics(topics)
+                        print("[Twitch] PubSub für Channel Points abonniert.")
+                    except Exception as e:
+                        print(f"[Twitch PubSub] Fehler beim Abonnieren: {e}")
                 
                 # Helper für API Calls
                 async def fetch_badges_api(url):

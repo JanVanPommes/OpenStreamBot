@@ -22,8 +22,16 @@
             left: 0;
             width: 100%;
             height: 100%;
+            border: none;
             z-index: 1;
-            display: none;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease-in-out;
+        }
+
+        #player.active {
+            opacity: 1;
+            pointer-events: auto;
         }
 
         #debug {
@@ -68,17 +76,21 @@
     <div id="player"></div>
 
     <script>
+        let badgeTimer = null;
+        let badgeFadeTimer = null;
         function showStatusBadge(text, borderColor, autoFade = true) {
             const badge = document.getElementById('status-badge');
             if (!badge) return;
+            if (badgeTimer) clearTimeout(badgeTimer);
+            if (badgeFadeTimer) clearTimeout(badgeFadeTimer);
             badge.innerHTML = text;
             badge.style.borderColor = borderColor;
             badge.style.opacity = '1';
             badge.style.display = 'block';
             if (autoFade) {
-                setTimeout(() => {
+                badgeTimer = setTimeout(() => {
                     badge.style.opacity = '0';
-                    setTimeout(() => { badge.style.display = 'none'; }, 800);
+                    badgeFadeTimer = setTimeout(() => { badge.style.display = 'none'; }, 800);
                 }, 4000);
             }
         }
@@ -135,6 +147,15 @@
         function onPlayerReady(event) {
             log("Player Ready Event.");
             playerReady = true;
+            try {
+                if (player && typeof player.getIframe === 'function') {
+                    const iframe = player.getIframe();
+                    if (iframe) {
+                        iframe.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share');
+                        iframe.setAttribute('allowfullscreen', '1');
+                    }
+                }
+            } catch (e) {}
             if (queue.length > 0 && !isPlaying) {
                 playNext();
             }
@@ -142,9 +163,9 @@
 
         function onPlayerError(event) {
             log("Player Error: " + event.data);
-            // Only terminate on fatal unrecoverable video errors (100 = not found, 101/150 = embed disallowed)
-            if (event.data === 100 || event.data === 101 || event.data === 150) {
-                log("Fatal error, finishing video.");
+            // If an error happens while a video is supposed to play, finish so backend un-ducks
+            if (isPlaying) {
+                log("Error during playback (Code " + event.data + "), finishing video.");
                 finishVideo();
             }
         }
@@ -174,7 +195,9 @@
 
             const playerEl = document.getElementById('player');
             if (playerEl) {
-                playerEl.style.display = 'none';
+                playerEl.classList.remove('active');
+                playerEl.style.opacity = '0';
+                playerEl.style.pointerEvents = 'none';
             }
 
             // Notify Bot backend that video has ended (restores audio ducking)
@@ -235,7 +258,13 @@
                 finishVideo();
             } else if (event.data === YT.PlayerState.PLAYING) {
                 log("Video Playing.");
-                document.getElementById('player').style.display = 'block';
+                showStatusBadge("▶ Wiedergabe läuft", "#10B981", true);
+                const playerEl = document.getElementById('player');
+                if (playerEl) {
+                    playerEl.classList.add('active');
+                    playerEl.style.opacity = '1';
+                    playerEl.style.pointerEvents = 'auto';
+                }
                 isPlaying = true;
                 startPlaybackMonitor();
 
@@ -276,45 +305,70 @@
             try { player.unMute(); } catch (e) { }
             try { player.setVolume(100); } catch (e) { }
 
-            document.getElementById('player').style.display = 'block';
+            const playerEl = document.getElementById('player');
+            if (playerEl) {
+                playerEl.classList.add('active');
+                playerEl.style.opacity = '1';
+                playerEl.style.pointerEvents = 'auto';
+            }
             player.loadVideoById(vidId);
             isPlaying = true;
         }
 
-        // 2. WebSocket Connection
-        const ws = new WebSocket("ws://localhost:8080");
+        // 2. WebSocket Connection (reconnects cleanly without reloading the HTML page)
+        let ws = null;
+        let reconnectTimer = null;
 
-        ws.onopen = () => {
-            log("WS Connected.");
-            showStatusBadge("🟢 OpenStreamBot Overlay bereit (ws://localhost:8080)", "#10B981", true);
-        };
-
-        ws.onmessage = (event) => {
-            try {
-                const msg = JSON.parse(event.data);
-                if (msg.event === "YouTubePlay") {
-                    log("Received YouTubePlay: " + msg.data.videoId);
-                    queue.push(msg.data.videoId);
-                    if (!isPlaying) {
-                        playNext();
-                    }
-                } else if (msg.event === "YouTubeStop") {
-                    log("Received YouTubeStop.");
-                    queue = [];
-                    finishVideo();
-                }
-            } catch (e) {
-                log("WS Error: " + e.message);
+        function connectWebSocket() {
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
             }
-        };
 
-        ws.onclose = () => {
-            log("WS Disconnected. Reconnecting...");
-            showStatusBadge("🔴 Verbindung getrennt (ws://localhost:8080) – Bitte Bot im Launcher starten!", "#EF4444", false);
-            setTimeout(() => {
-                location.reload();
-            }, 3000);
-        };
+            try {
+                const host = window.location.hostname || "localhost";
+                ws = new WebSocket(`ws://${host}:8080`);
+
+                ws.onopen = () => {
+                    log("WS Connected.");
+                    showStatusBadge(`🟢 OpenStreamBot Overlay bereit (ws://${host}:8080)`, "#10B981", true);
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        if (msg.event === "YouTubePlay") {
+                            log("Received YouTubePlay: " + msg.data.videoId);
+                            showStatusBadge("⏳ Video wird geladen...", "#3B82F6", true);
+                            queue.push(msg.data.videoId);
+                            if (!isPlaying) {
+                                playNext();
+                            }
+                        } else if (msg.event === "YouTubeStop") {
+                            log("Received YouTubeStop.");
+                            queue = [];
+                            finishVideo();
+                        }
+                    } catch (e) {
+                        log("WS Error: " + e.message);
+                    }
+                };
+
+                ws.onclose = () => {
+                    log("WS Disconnected. Reconnecting in 3s...");
+                    showStatusBadge("🔴 Verbindung getrennt (Warte auf Bot...)", "#EF4444", false);
+                    reconnectTimer = setTimeout(connectWebSocket, 3000);
+                };
+
+                ws.onerror = (e) => {
+                    // onclose handles the reconnect
+                };
+            } catch (err) {
+                reconnectTimer = setTimeout(connectWebSocket, 3000);
+            }
+        }
+
+        connectWebSocket();
 
         // Taste 'T' drücken zum manuellen Testen eines Clips im Browser
         window.addEventListener('keydown', (e) => {

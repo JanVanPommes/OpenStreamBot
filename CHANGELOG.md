@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.6.4] - 2026-11-13 (Unstable)
+### Added
+- **Action Queue Automation (`queue_control` Sub-Action)**:
+  - Added a new sub-action **📋 Queue steuern (Start/Pause/Stopp)** (`queue_control`) in the Action Editor to automate action queues via any trigger (chat commands, channel points, OBS scene changes, timers, Stream Deck).
+  - Supported queue operations: **Start / Resume** (`start`), **Pause** (`pause`), **Stop (Pause & Clear)** (`stop`), **Clear** (`clear`), **Toggle Pause** (`toggle`), and **Set Delay** (`set_delay`).
+  - Supports targeting individual queues (`Default`, `TTS`, `Overlays`, `SoundFX`, or custom queues) as well as **All Queues** (`Alle Queues` / `All`), and includes an optional auto-revert **Duration** timer (in seconds).
+- **Dashboard Queue Pause Status & Countdown Display**:
+  - **Launcher Control Center (`⚡ Action Queue Status`)**: Paused queues are now highlighted with an amber border, a prominent summary status (`⏸ Pausiert: ...`), and a live remaining time countdown on both the summary bar and individual queue chips.
+  - **Web Dashboard**: Added a live `⏸ Queue Pausiert` status badge with countdown to the header bar via `QueueStatus` WebSocket broadcasts.
+- **Twitch EventSub Channel Points**:
+  - Migrated Twitch Channel Point redemption events from deprecated PubSub to modern **Twitch EventSub WebSocket** (`eventsub.EventSubWSClient`), keeping PubSub only as a fallback.
+
+### Fixed
+- **Multiple Actions per Trigger**: Fixed an issue in `ActionEngine.handle_event` where a `break` statement stopped checking remaining actions after the first matching action, allowing multiple actions to fire simultaneously on the same event (e.g., multiple actions triggered by the same OBS scene change).
+- **Queue Pause Race Condition & Deadlock Prevention**:
+  - Fixed a race condition in `action_queue_worker` where pausing an idle queue could still allow the next incoming action to execute immediately.
+  - Actions containing `queue_control` sub-actions now automatically bypass paused queues so resume/control commands never deadlock waiting on a paused queue.
+  - Connected `QueueManagerDialog` in the Launcher via WebSocket (`queue_control`) for live queue control when the bot runs in a subprocess.
+- **YouTube Shorts Overlay & HTTP Server Stability**:
+  - Replaced full-page reload on WebSocket disconnect in `yt_overlay.html` with seamless background reconnection and smooth opacity transitions.
+  - Upgraded `SimpleWebServer` to `ThreadingTCPServer`, suppressed benign `BrokenPipeError`/`ConnectionResetError` tracebacks, and routed HTTP access logs to `stdout` instead of `stderr`.
+
 ## [0.6.3] - 2026-09-26
 ### Added
 - **2-Tier Version & Release Channel System**:

@@ -12,14 +12,26 @@ document.documentElement.style.setProperty('--font-size', savedFontSize + 'px');
 document.getElementById('font-slider').value = savedFontSize;
 document.getElementById('font-val').innerText = savedFontSize + 'px';
 
+let reconnectTimer = null;
+
 // --- VERBINDUNGS-LOGIK ---
 function connect() {
-    // Falls noch eine alte Verbindung hängt, schließen
-    if (ws) {
-        ws.close();
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
     }
 
-    ws = new WebSocket("ws://localhost:8080");
+    // Falls noch eine alte Verbindung hängt, sauber schließen ohne Event-Kaskade
+    if (ws) {
+        try {
+            ws.onclose = null;
+            ws.onerror = null;
+            ws.close();
+        } catch (e) {}
+    }
+
+    const host = window.location.hostname || "localhost";
+    ws = new WebSocket(`ws://${host}:8080`);
 
     ws.onopen = () => {
         console.log("Verbunden mit PommesBot");
@@ -27,20 +39,23 @@ function connect() {
         connectionPanel.style.display = 'none'; // Button ausblenden
         addSystemMessage("Verbindung hergestellt.");
 
-        // Badges anfordern
+        // Badges & Queue-Status anfordern
         ws.send(JSON.stringify({ action: "get_badges" }));
+        ws.send(JSON.stringify({ event: "get_queue_status" }));
     };
 
     ws.onclose = () => {
         statusDot.classList.remove('connected');
         connectionPanel.style.display = 'block';
-        addSystemMessage("Verbindung getrennt. Reconnect in 10s...");
-        setTimeout(connect, 10000);
+        addSystemMessage("Verbindung getrennt. Reconnect in 3s...");
+        if (!reconnectTimer) {
+            reconnectTimer = setTimeout(connect, 3000);
+        }
     };
 
     ws.onerror = (err) => {
         console.error("Socket Error:", err);
-        ws.close();
+        try { ws.close(); } catch (e) {}
     };
 
     ws.onmessage = (event) => {
@@ -53,6 +68,8 @@ function connect() {
             addChatMessage(data.data);
         } else if (data.event === "BotStatus") {
             addSystemMessage(`Status: ${data.data.status}`);
+        } else if (data.event === "QueueStatus") {
+            updateQueueStatusBadge(data.data);
         } else if (data.event === "SystemEvent") {
             if (data.data.type === "twitch_first_message" || data.data.type === "youtube_first_message") {
                 return; // Ignoriert für Chat-Ansicht, da ChatMessage markiert wird
@@ -66,6 +83,43 @@ function connect() {
         }
     };
 }
+
+let latestQueueStatuses = {};
+function updateQueueStatusBadge(statuses) {
+    if (statuses && typeof statuses === 'object') {
+        latestQueueStatuses = statuses;
+    }
+    const badge = document.getElementById('queue-status-badge');
+    if (!badge) return;
+
+    const nowSec = Date.now() / 1000;
+    const pausedList = [];
+    for (const [qName, qData] of Object.entries(latestQueueStatuses)) {
+        if (qData && (qData.paused || qData.status === "Paused")) {
+            let label = qName;
+            if (qData.paused_until) {
+                const rem = Math.max(0, Math.round(qData.paused_until - nowSec));
+                if (rem > 0) {
+                    const remStr = rem >= 60 ? `${Math.floor(rem / 60)}m ${String(rem % 60).padStart(2, '0')}s` : `${rem}s`;
+                    label += ` (${remStr})`;
+                }
+            }
+            if (qData.pending && qData.pending > 0) {
+                label += ` [+${qData.pending}]`;
+            }
+            pausedList.push(label);
+        }
+    }
+
+    if (pausedList.length > 0) {
+        badge.style.display = 'inline-block';
+        badge.innerText = `⏸ Queue Pausiert: ${pausedList.join(', ')}`;
+    } else {
+        badge.style.display = 'none';
+        badge.innerText = '';
+    }
+}
+setInterval(() => updateQueueStatusBadge(null), 1000);
 
 // Start: Versuche sofort beim Laden zu verbinden
 connect();
@@ -207,6 +261,18 @@ function startYouTubeStream() {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ action: "youtube_stream_start" }));
         addSystemMessage("YouTube Stream-Suche angefordert...");
+    } else {
+        addSystemMessage("Fehler: Nicht verbunden!");
+    }
+}
+
+function triggerTestShort() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            event: "trigger_action_by_name",
+            data: { action: "Shorts Timer" }
+        }));
+        addSystemMessage("📱 YouTube Short Wiedergabe angefordert...");
     } else {
         addSystemMessage("Fehler: Nicht verbunden!");
     }
