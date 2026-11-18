@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.5] - 2026-11-18 (Unstable)
+### Fixed
+- **Sequential Queue Execution for Random Action Groups (`random_action_group`)**:
+  - Fixed an issue in `ActionEngine.execute_sub_action` where sub-actions inside a `random_action_group` (e.g., ElevenLabs TTS or sound playback in watch-streak alerts) were launched asynchronously via `asyncio.create_task` instead of being awaited (`await`). Queued actions that accumulated during a queue pause now execute strictly sequentially one after another instead of firing simultaneously upon resume.
+- **Critical Queue Worker Crash After Queue Pause (`ValueError: task_done() called too many times`)**:
+  - Fixed a critical bug in `ActionEngine.action_queue_worker` where re-queueing an incoming action during an active pause erroneously decremented `queue_obj._unfinished_tasks`, causing `queue_obj.task_done()` to raise a `ValueError` after processing the last queued item and permanently terminating the queue worker task (which stopped all Twitch Channel Points rewards and `Default` queue actions until a bot restart).
+  - Added `ValueError` guards around `task_done()`, top-level exception recovery inside `action_queue_worker`, and automatic worker task health checks/restarts in `get_or_create_queue`.
+- **Audio Mixer Initialization & Sound Reference Retention**:
+  - Fixed `_ensure_audio_device` to initialize `pygame.mixer` even when `device` is `None` and retained a reference to active SFX `Sound` objects (`current_sfx_sound`) during playback to prevent premature garbage collection.
+- **Inferred Pause Countdown for Multi-Step Pause Actions**:
+  - `_execute_action_blocking` now automatically detects pause duration when a `queue_control` (`pause`/`toggle`/`stop` with `duration: 0`) is followed by `delay` sub-action(s) and a `queue_control` (`start`/`resume`) within the same action, displaying the live countdown in the Dashboard status bar.
+
 ## [0.6.4] - 2026-11-13 (Unstable)
 ### Added
 - **Action Queue Automation (`queue_control` Sub-Action)**:

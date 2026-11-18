@@ -110,7 +110,7 @@ ctk.set_default_color_theme("blue")
 CONFIG_FILE = "config.yaml"
 # Nutze nun den internen Webserver statt Datei-Pfad
 DASHBOARD_URL = "http://localhost:8000/interface/dashboard.html"
-VERSION = "0.6.4"
+VERSION = "0.6.5"
 
 def bind_universal_scroll(scrollable_frame):
     """Recursively binds mouse wheel scroll events to a CTkScrollableFrame,

@@ -178,12 +178,6 @@ class ActionEngine:
         Main entry point for triggers.
         Checks if any action matches the event type and data.
         """
-        now = time.time()
-    async def handle_event(self, event_type, data):
-        """
-        Main entry point for triggers.
-        Checks if any action matches the event type and data.
-        """
         # --- SYSTEM EVENTS ---
         if event_type == "BotStatus" and self.twitch:
             if data.get("platform") == "Twitch" and data.get("status") == "Connected":
@@ -558,7 +552,10 @@ class ActionEngine:
             while not q.empty():
                 try:
                     q.get_nowait()
-                    q.task_done()
+                    try:
+                        q.task_done()
+                    except ValueError:
+                        pass
                     cleared += 1
                 except asyncio.QueueEmpty:
                     break
@@ -627,9 +624,10 @@ class ActionEngine:
         return res
 
     def get_or_create_queue(self, queue_name="Default"):
-        """Gets existing asyncio.Queue for queue_name or initializes a new worker task for it."""
+        """Gets existing asyncio.Queue for queue_name or initializes/restarts a worker task for it."""
         q_name = queue_name or "Default"
-        if q_name not in self.queues:
+        is_new = q_name not in self.queues
+        if is_new:
             q = asyncio.Queue()
             self.queues[q_name] = q
             if q_name not in self.queue_configs:
@@ -641,12 +639,17 @@ class ActionEngine:
                 self.queue_status[q_name]["status"] = "Paused" if is_paused else "Idle"
                 self.queue_status[q_name]["current_action"] = None
                 self.queue_status[q_name]["pending"] = 0
+
+        existing_task = self.queue_tasks.get(q_name)
+        if existing_task is None or existing_task.done():
             try:
                 loop = asyncio.get_running_loop()
-                task = loop.create_task(self.action_queue_worker(q_name, q))
+                task = loop.create_task(self.action_queue_worker(q_name, self.queues[q_name]))
                 self.queue_tasks[q_name] = task
             except RuntimeError:
                 pass
+
+        if is_new:
             print(f"[ActionEngine] Initialized Action Queue: '{q_name}'")
             self.save_queue_status_file()
         return self.queues[q_name]
@@ -654,59 +657,86 @@ class ActionEngine:
     async def action_queue_worker(self, queue_name, queue_obj):
         """Worker task processing queued actions for a specific queue."""
         while True:
-            # Check pause status
-            cfg = self.get_queue_config(queue_name)
-            while cfg.get("paused", False):
-                await asyncio.sleep(0.2)
-                cfg = self.get_queue_config(queue_name)
-
-            action, context_data = await queue_obj.get()
-
-            # Re-check pause status in case queue was paused while worker was idle at get()
-            cfg = self.get_queue_config(queue_name)
-            if cfg.get("paused", False):
-                queue_obj._queue.appendleft((action, context_data))
-                queue_obj._unfinished_tasks = max(0, queue_obj._unfinished_tasks - 1)
-                self.save_queue_status_file()
-                continue
-
-            act_name = action.get('name', 'Unknown')
-            import time
-            now_ts = time.time()
-            
-            # Update status
-            self.queue_status[queue_name] = {
-                "current_action": act_name,
-                "last_action": act_name,
-                "last_executed_at": now_ts,
-                "pending": queue_obj.qsize(),
-                "status": "Running"
-            }
-            self.save_queue_status_file()
-
             try:
-                print(f"[Action Queue:{queue_name}] Executing action: {act_name}")
-                await self._execute_action_blocking(action, context_data)
-            except Exception as e:
-                print(f"[Action Queue:{queue_name}] Error: {e}")
-            finally:
-                queue_obj.task_done()
+                # Check pause status
+                cfg = self.get_queue_config(queue_name)
+                while cfg.get("paused", False):
+                    await asyncio.sleep(0.2)
+                    cfg = self.get_queue_config(queue_name)
 
-            # Apply queue delay if configured
-            delay = cfg.get("delay", 0.0)
-            if delay > 0:
-                await asyncio.sleep(delay)
+                action, context_data = await queue_obj.get()
 
-            # Reset status if empty
-            if queue_obj.empty():
+                # Re-check pause status in case queue was paused while worker was idle at get()
+                cfg = self.get_queue_config(queue_name)
+                if cfg.get("paused", False):
+                    # Re-insert at the front without modifying _unfinished_tasks
+                    # (since get() does not decrement _unfinished_tasks and appendleft() does not increment it)
+                    queue_obj._queue.appendleft((action, context_data))
+                    self.save_queue_status_file()
+                    if self.event_server:
+                        try:
+                            asyncio.create_task(self.event_server.broadcast("QueueStatus", self.get_all_queues_status()))
+                        except Exception:
+                            pass
+                    continue
+
+                act_name = action.get('name', 'Unknown')
+                now_ts = time.time()
+                
+                # Update status
                 self.queue_status[queue_name] = {
-                    "current_action": None,
+                    "current_action": act_name,
                     "last_action": act_name,
                     "last_executed_at": now_ts,
-                    "pending": 0,
-                    "status": "Idle"
+                    "pending": queue_obj.qsize(),
+                    "status": "Running"
                 }
                 self.save_queue_status_file()
+                if self.event_server:
+                    try:
+                        asyncio.create_task(self.event_server.broadcast("QueueStatus", self.get_all_queues_status()))
+                    except Exception:
+                        pass
+
+                try:
+                    print(f"[Action Queue:{queue_name}] Executing action: {act_name}")
+                    await self._execute_action_blocking(action, context_data)
+                except Exception as e:
+                    print(f"[Action Queue:{queue_name}] Error: {e}")
+                finally:
+                    try:
+                        queue_obj.task_done()
+                    except ValueError:
+                        pass
+
+                # Apply queue delay if configured
+                cfg = self.get_queue_config(queue_name)
+                delay = cfg.get("delay", 0.0)
+                if delay > 0:
+                    await asyncio.sleep(delay)
+
+                # Reset status if empty
+                cfg = self.get_queue_config(queue_name)
+                is_paused_now = bool(cfg.get("paused", False))
+                if queue_obj.empty() or is_paused_now:
+                    self.queue_status[queue_name] = {
+                        "current_action": None,
+                        "last_action": act_name,
+                        "last_executed_at": now_ts,
+                        "pending": queue_obj.qsize(),
+                        "status": "Paused" if is_paused_now else "Idle"
+                    }
+                    self.save_queue_status_file()
+                    if self.event_server:
+                        try:
+                            asyncio.create_task(self.event_server.broadcast("QueueStatus", self.get_all_queues_status()))
+                        except Exception:
+                            pass
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[Action Queue:{queue_name}] Unexpected worker error: {e}")
+                await asyncio.sleep(0.2)
 
     async def execute_action(self, action, context_data):
         """Dispatches an action to its assigned queue or executes in parallel."""
@@ -720,7 +750,6 @@ class ActionEngine:
         # so queue control actions (like Start/Resume/Stop/Clear) never deadlock waiting on a paused queue.
         if queue_name.lower() in ["parallel", "async", "none"] or (has_queue_control and is_target_queue_paused):
             act_name = action.get('name', 'Unknown')
-            import time
             now_ts = time.time()
             self.queue_status["Parallel"] = {
                 "current_action": act_name,
@@ -748,6 +777,11 @@ class ActionEngine:
         queue_obj = self.get_or_create_queue(queue_name)
         await queue_obj.put((action, context_data))
         self.save_queue_status_file()
+        if self.event_server:
+            try:
+                asyncio.create_task(self.event_server.broadcast("QueueStatus", self.get_all_queues_status()))
+            except Exception:
+                pass
 
     async def _execute_action_blocking(self, action, context_data):
         sub_actions = action.get('sub_actions', [])
@@ -755,8 +789,34 @@ class ActionEngine:
         # Safe copy of context for variable replacement
         ctx = context_data.copy() if context_data else {}
         
-        for sa_config in sub_actions:
+        for idx, sa_config in enumerate(sub_actions):
             try:
+                # If a queue_control pause/toggle/stop has duration=0 but is followed by delay + start/resume
+                # in the same action (e.g. Alert Pause), infer the countdown duration for the Dashboard UI.
+                ctx.pop("_inferred_pause_duration", None)
+                if sa_config.get('type') == 'queue_control':
+                    q_act = str(sa_config.get('queue_action', 'pause')).lower().strip()
+                    try:
+                        explicit_dur = float(sa_config.get('duration', 0) or 0)
+                    except (ValueError, TypeError):
+                        explicit_dur = 0.0
+                    if explicit_dur <= 0 and q_act in ['pause', 'toggle', 'stop']:
+                        delay_sum_sec = 0.0
+                        found_resume = False
+                        for next_sa in sub_actions[idx + 1:]:
+                            nt = next_sa.get('type')
+                            if nt == 'delay':
+                                try:
+                                    delay_sum_sec += float(next_sa.get('ms', 0) or 0) / 1000.0
+                                except (ValueError, TypeError):
+                                    pass
+                            elif nt == 'queue_control':
+                                nq_act = str(next_sa.get('queue_action', '')).lower().strip()
+                                if nq_act in ['start', 'resume', 'toggle'] and delay_sum_sec > 0:
+                                    found_resume = True
+                                break
+                        if found_resume and delay_sum_sec > 0:
+                            ctx["_inferred_pause_duration"] = delay_sum_sec
                 await self.execute_sub_action(sa_config, ctx)
             except Exception as e:
                 print(f"[ActionEngine] Error in sub-action {sa_config.get('type')}: {e}")
@@ -1107,7 +1167,7 @@ class ActionEngine:
                     if sub_action_data:
                         nested_type = sub_action_data.get('type', 'Unknown')
                         print(f"[ActionEngine] Randomly selected '{nested_type}' from group (Weight: {weight}%)")
-                        asyncio.create_task(self.execute_sub_action(sub_action_data, ctx))
+                        await self.execute_sub_action(sub_action_data, ctx)
                     else:
                         print(f"[ActionEngine] Random target action missing.")
                     break
@@ -1169,6 +1229,8 @@ class ActionEngine:
                 duration = float(config.get('duration', 0) or 0)
             except (ValueError, TypeError):
                 duration = 0.0
+            inferred_dur = float(ctx.get("_inferred_pause_duration", 0.0) or 0.0) if isinstance(ctx, dict) else 0.0
+            ui_duration = duration if duration > 0 else inferred_dur
 
             # Resolve target queue(s)
             if raw_target.lower() in ["all", "alle", "alle queues", "*"]:
@@ -1205,7 +1267,7 @@ class ActionEngine:
                         asyncio.create_task(_revert_start())
 
                 elif q_action == "pause":
-                    p_until = (time.time() + duration) if duration > 0 else None
+                    p_until = (time.time() + ui_duration) if ui_duration > 0 else None
                     self.set_queue_config(q_name, paused=True, paused_until=p_until)
                     print(f"[ActionEngine] Queue '{q_name}' paused.")
                     if duration > 0:
@@ -1218,7 +1280,7 @@ class ActionEngine:
 
                 elif q_action == "toggle":
                     new_paused = not old_paused
-                    p_until = (time.time() + duration) if (new_paused and duration > 0) else None
+                    p_until = (time.time() + ui_duration) if (new_paused and ui_duration > 0) else None
                     self.set_queue_config(q_name, paused=new_paused, paused_until=p_until)
                     print(f"[ActionEngine] Queue '{q_name}' toggled -> {'Paused' if new_paused else 'Running/Idle'}.")
                     if duration > 0:
@@ -1229,7 +1291,7 @@ class ActionEngine:
                         asyncio.create_task(_revert_toggle())
 
                 elif q_action == "stop":
-                    p_until = (time.time() + duration) if duration > 0 else None
+                    p_until = (time.time() + ui_duration) if ui_duration > 0 else None
                     self.clear_queue(q_name)
                     self.set_queue_config(q_name, paused=True, paused_until=p_until)
                     print(f"[ActionEngine] Queue '{q_name}' stopped (paused & cleared).")
@@ -1330,7 +1392,14 @@ class ActionEngine:
 
     def _ensure_audio_device(self, device_name):
         """Initializes mixer with specific device if changed."""
-        if device_name is None: return # Keep current
+        if device_name is None:
+            if not sa.get_init():
+                try:
+                    sa.init()
+                    self.current_audio_device = 'Default'
+                except Exception as e:
+                    print(f"[Audio] Failed to init default device: {e}")
+            return # Keep current
         
         # If device changed or mixer not init
         if not sa.get_init() or self.current_audio_device != device_name:
@@ -1364,6 +1433,7 @@ class ActionEngine:
             sound = sa.Sound(path)
             sound.set_volume(volume)
             sound.play()
+            self.current_sfx_sound = sound
             
             # We don't block here anymore because Sound.play is fire-and-forget
             # This allows multiple sounds to play at once!
